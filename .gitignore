@@ -19,6 +19,7 @@ apps/mobile/.gradle/
 apps/mobile/build/
 apps/mobile/app/build/
 apps/mobile/local.properties
+apps/mobile/keystore.properties
 apps/mobile/.idea/
 apps/mobile/captures/
 *.apk

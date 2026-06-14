@@ -55,6 +55,10 @@ class AudioStreamer {
     var peakLevel: Float = 0f
         private set
 
+    /** When true, silence is sent instead of the mic — the stream stays warm. */
+    @Volatile
+    var muted: Boolean = false
+
     private var worker: Thread? = null
 
     @SuppressLint("MissingPermission")
@@ -69,6 +73,7 @@ class AudioStreamer {
     ) {
         if (isRunning) return
         isRunning = true
+        muted = false
         worker = thread(name = "microhone-mic-net") {
             var record: AudioRecord? = null
             var udp: DatagramSocket? = null
@@ -139,6 +144,7 @@ class AudioStreamer {
                     }
                     if (read < SAMPLES_PER_FRAME) continue
 
+                    if (muted) java.util.Arrays.fill(samples, 0, read, 0.toShort())
                     peakLevel = framePeak(samples, read)
 
                     val payload: ByteArray

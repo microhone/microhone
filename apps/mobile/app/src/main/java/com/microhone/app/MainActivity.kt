@@ -1,6 +1,7 @@
 package com.microhone.app
 
 import android.Manifest
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -127,6 +128,15 @@ fun parsePairing(link: String): Pairing? {
     return Pairing(host, port, key)
 }
 
+private const val KEY_FLAGS = Base64.URL_SAFE or Base64.NO_PADDING or Base64.NO_WRAP
+
+fun encodeKey(key: ByteArray?): String? =
+    key?.let { Base64.encodeToString(it, KEY_FLAGS) }
+
+fun decodeKey(encoded: String?): ByteArray? =
+    encoded?.let { runCatching { Base64.decode(it, KEY_FLAGS) }.getOrNull() }
+        ?.takeIf { it.size == 32 }
+
 @Composable
 private fun SectionCard(content: @Composable () -> Unit) {
     Card(
@@ -171,18 +181,33 @@ private fun StatusPill(streaming: Boolean) {
 @Composable
 fun PocScreen() {
     val context = LocalContext.current
+    val prefs = remember { context.getSharedPreferences("microhone", Context.MODE_PRIVATE) }
 
-    var host by remember { mutableStateOf("") }
-    var port by remember { mutableStateOf("47801") }
-    var useOpus by remember { mutableStateOf(true) }
-    var usb by remember { mutableStateOf(false) }
+    var host by remember { mutableStateOf(prefs.getString("host", "") ?: "") }
+    var port by remember { mutableStateOf(prefs.getString("port", "47801") ?: "47801") }
+    var useOpus by remember { mutableStateOf(prefs.getBoolean("opus", true)) }
+    var usb by remember { mutableStateOf(prefs.getBoolean("usb", false)) }
+    var autoConnect by remember { mutableStateOf(prefs.getBoolean("auto", false)) }
     var pairingLink by remember { mutableStateOf("") }
-    var pairingKey by remember { mutableStateOf<ByteArray?>(null) }
+    var pairingKey by remember { mutableStateOf(decodeKey(prefs.getString("key", null))) }
+    var muted by remember { mutableStateOf(false) }
     var showScanner by remember { mutableStateOf(false) }
     var streaming by remember { mutableStateOf(AudioEngine.streamer.isRunning) }
     var status by remember { mutableStateOf<String?>(null) }
     var level by remember { mutableFloatStateOf(0f) }
     var devices by remember { mutableStateOf<List<DiscoveredDevice>>(emptyList()) }
+
+    // Remember the connection so the phone reconnects with one tap next time.
+    LaunchedEffect(host, port, useOpus, usb, autoConnect, pairingKey) {
+        prefs.edit()
+            .putString("host", host)
+            .putString("port", port)
+            .putBoolean("opus", useOpus)
+            .putBoolean("usb", usb)
+            .putBoolean("auto", autoConnect)
+            .putString("key", encodeKey(pairingKey))
+            .apply()
+    }
 
     val discovery = remember { DeviceDiscovery(context) }
     DisposableEffect(Unit) {
@@ -216,6 +241,7 @@ fun PocScreen() {
             putExtra(MicForegroundService.EXTRA_KEY, pairingKey)
         }
         ContextCompat.startForegroundService(context, intent)
+        muted = false
         streaming = true
         val lock = if (pairingKey != null) " · 🔒" else ""
         status = "Connected to $host$lock"
@@ -223,6 +249,7 @@ fun PocScreen() {
 
     fun stopStreaming() {
         context.stopService(Intent(context, MicForegroundService::class.java))
+        muted = false
         streaming = false
         status = null
     }
@@ -269,6 +296,15 @@ fun PocScreen() {
             }
         }
         permissionLauncher.launch(perms.toTypedArray())
+    }
+
+    // Auto-connect once on open if enabled and we already have what we need.
+    LaunchedEffect(Unit) {
+        if (autoConnect && !AudioEngine.streamer.isRunning &&
+            hasMicPermission && host.isNotBlank()
+        ) {
+            beginStreaming()
+        }
     }
 
     LaunchedEffect(streaming) {
@@ -398,17 +434,39 @@ fun PocScreen() {
                     .height(8.dp)
                     .clip(CircleShape),
             )
-            Button(
-                onClick = {
-                    if (streaming) stopStreaming()
-                    else if (hasMicPermission) beginStreaming()
-                    else requestAndStart()
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(52.dp),
-            ) {
-                Text(if (streaming) "Stop" else "Start")
+            if (streaming) {
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    OutlinedButton(
+                        onClick = {
+                            muted = !muted
+                            AudioEngine.streamer.muted = muted
+                        },
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(52.dp),
+                    ) {
+                        Text(if (muted) "Unmute" else "Mute")
+                    }
+                    Button(
+                        onClick = { stopStreaming() },
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(52.dp),
+                    ) {
+                        Text("Stop")
+                    }
+                }
+            } else {
+                Button(
+                    onClick = {
+                        if (hasMicPermission) beginStreaming() else requestAndStart()
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(52.dp),
+                ) {
+                    Text("Start")
+                }
             }
             status?.let {
                 Text(
@@ -450,6 +508,18 @@ fun PocScreen() {
                             port = "47801"
                         }
                     },
+                    enabled = !streaming,
+                )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("Auto-connect on open")
+                Switch(
+                    checked = autoConnect,
+                    onCheckedChange = { autoConnect = it },
                     enabled = !streaming,
                 )
             }

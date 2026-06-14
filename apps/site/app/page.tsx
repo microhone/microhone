@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { Reveal } from "./components/reveal";
 import { HeroVisual } from "./components/hero-visual";
+import { AppsViz, LatencyViz, LinkViz } from "./components/card-visuals";
 
 // Public "releases" repo that CI publishes artifacts to (code repo stays private).
 const RELEASES_REPO = "https://github.com/microhone/microhone";
@@ -8,37 +9,13 @@ const GITHUB_URL = RELEASES_REPO;
 const WINDOWS_DOWNLOAD = `${RELEASES_REPO}/releases/latest/download/microhone-windows-setup.exe`;
 const ANDROID_DOWNLOAD = `${RELEASES_REPO}/releases/latest/download/microhone-android.apk`;
 
-function BoltIcon() {
+function DownloadIcon() {
   return (
-    <svg viewBox="0 0 24 24" fill="none" className="size-5">
+    <svg viewBox="0 0 24 24" fill="none" className="size-4">
       <path
-        d="M13 2 4 14h7l-1 8 10-12h-7l1-8z"
+        d="M12 3v12m0 0 4-4m-4 4-4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"
         stroke="currentColor"
-        strokeWidth="1.7"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
-function AppsIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" className="size-5">
-      <rect x="3" y="3" width="7" height="7" rx="2" stroke="currentColor" strokeWidth="1.7" />
-      <rect x="14" y="3" width="7" height="7" rx="2" stroke="currentColor" strokeWidth="1.7" />
-      <rect x="3" y="14" width="7" height="7" rx="2" stroke="currentColor" strokeWidth="1.7" />
-      <rect x="14" y="14" width="7" height="7" rx="2" stroke="currentColor" strokeWidth="1.7" />
-    </svg>
-  );
-}
-
-function PlugIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" className="size-5">
-      <path
-        d="M9 2v5M15 2v5M7 7h10v3a5 5 0 0 1-10 0zM12 15v7"
-        stroke="currentColor"
-        strokeWidth="1.7"
+        strokeWidth="1.8"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
@@ -46,34 +23,49 @@ function PlugIcon() {
   );
 }
 
-const benefits: { icon: ReactNode; title: string; body: string }[] = [
+const benefits: { viz: ReactNode; title: string; body: string }[] = [
   {
-    icon: <BoltIcon />,
+    viz: <LatencyViz />,
     title: "Barely any delay",
     body: "Fast enough for live calls and streaming, not just recording.",
   },
   {
-    icon: <AppsIcon />,
+    viz: <AppsViz />,
     title: "Works with every app",
     body: "Discord, Zoom, OBS, Meet — if it uses a microphone, it just works.",
   },
   {
-    icon: <PlugIcon />,
+    viz: <LinkViz />,
     title: "WiFi or USB",
     body: "Go fully wireless, or plug in a cable for the lowest delay.",
   },
 ];
 
+const primaryButton =
+  "inline-flex items-center justify-center gap-2 rounded-full bg-blue-500 px-6 py-3 font-medium text-white shadow-lg shadow-blue-500/25 transition-all duration-200 hover:bg-blue-600 hover:shadow-xl hover:shadow-blue-500/30 active:scale-95";
+const secondaryButton =
+  "inline-flex items-center justify-center gap-2 rounded-full border border-slate-200 bg-white px-6 py-3 font-medium text-slate-700 transition-all duration-200 hover:border-slate-300 hover:bg-slate-50 active:scale-95";
+
 export default function Home() {
   return (
-    <div className="flex flex-1 flex-col">
+    <div className="relative flex flex-1 flex-col">
+      {/* Background */}
+      <div
+        aria-hidden
+        className="pointer-events-none fixed inset-0 -z-10 overflow-hidden"
+      >
+        <div className="bg-dots absolute inset-0 mask-[radial-gradient(ellipse_70%_55%_at_50%_0%,black,transparent)]" />
+        <div className="animate-blob absolute -top-24 left-[18%] h-96 w-96 rounded-full bg-blue-300/45 blur-[110px]" />
+        <div className="animate-blob absolute top-1/4 right-[4%] h-80 w-80 rounded-full bg-sky-300/40 blur-[110px] [animation-delay:4s]" />
+      </div>
+
       {/* Nav */}
-      <header className="sticky top-0 z-20 border-b border-slate-100 bg-white/80 backdrop-blur-xl">
+      <header className="sticky top-0 z-20 border-b border-slate-100 bg-white/70 backdrop-blur-xl">
         <nav className="mx-auto flex w-full max-w-5xl items-center justify-between px-6 py-4">
           <span className="text-lg font-semibold tracking-tight">microhone</span>
           <a
             href="#download"
-            className="rounded-full bg-blue-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-600"
+            className="rounded-full bg-blue-500 px-4 py-2 text-sm font-medium text-white shadow-sm shadow-blue-500/25 transition-all duration-200 hover:bg-blue-600 hover:shadow-md active:scale-95"
           >
             Download
           </a>
@@ -81,63 +73,50 @@ export default function Home() {
       </header>
 
       {/* Hero */}
-      <section className="relative overflow-hidden">
-        <div
-          aria-hidden
-          className="animate-blob pointer-events-none absolute left-1/2 -top-32 -z-10 h-104 w-104 -translate-x-1/2 rounded-full bg-blue-300/30 blur-[120px]"
-        />
-        <div className="mx-auto flex w-full max-w-5xl flex-col items-center px-6 pb-10 pt-20 text-center sm:pt-28">
-          <Reveal>
-            <span className="rounded-full border border-blue-100 bg-blue-50 px-3 py-1 text-xs font-medium text-blue-600">
-              Free &amp; open source
+      <section className="mx-auto flex w-full max-w-5xl flex-col items-center px-6 pb-20 pt-32 text-center sm:pt-44">
+        <Reveal>
+          <h1 className="max-w-2xl text-5xl font-semibold leading-[1.05] tracking-tight text-slate-900 sm:text-6xl">
+            Your phone is your PC&apos;s{" "}
+            <span className="bg-linear-to-r from-blue-500 to-sky-500 bg-clip-text text-transparent">
+              mic
             </span>
-          </Reveal>
-          <Reveal delay={0.05}>
-            <h1 className="mt-6 max-w-2xl text-5xl font-semibold leading-[1.05] tracking-tight text-slate-900 sm:text-6xl">
-              Your phone is your PC&apos;s{" "}
-              <span className="text-blue-500">mic</span>.
-            </h1>
-          </Reveal>
-          <Reveal delay={0.1}>
-            <p className="mx-auto mt-5 max-w-md text-lg text-slate-500">
-              Speak into your phone and it comes out on your computer — in any app.
-            </p>
-          </Reveal>
-          <Reveal delay={0.15}>
-            <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-              <a
-                href="#download"
-                className="rounded-full bg-blue-500 px-6 py-3 font-medium text-white shadow-lg shadow-blue-500/25 transition-colors hover:bg-blue-600"
-              >
-                Download
-              </a>
-              <a
-                href="#how"
-                className="rounded-full border border-slate-200 px-6 py-3 font-medium text-slate-700 transition-colors hover:bg-slate-50"
-              >
-                How it works
-              </a>
-            </div>
-          </Reveal>
-          <Reveal delay={0.2} className="w-full">
-            <HeroVisual />
-          </Reveal>
-        </div>
+            .
+          </h1>
+        </Reveal>
+        <Reveal delay={0.07}>
+          <p className="mx-auto mt-5 max-w-md text-lg text-slate-500">
+            Speak into your phone and it comes out on your computer — in any app.
+          </p>
+        </Reveal>
+        <Reveal delay={0.14}>
+          <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+            <a href="#download" className={primaryButton}>
+              <DownloadIcon />
+              Download
+            </a>
+            <a href="#how" className={secondaryButton}>
+              How it works
+            </a>
+          </div>
+        </Reveal>
+        <Reveal delay={0.2} className="w-full">
+          <HeroVisual />
+        </Reveal>
       </section>
 
       {/* Benefits */}
-      <section id="how" className="mx-auto w-full max-w-5xl px-6 py-20">
-        <div className="grid gap-5 sm:grid-cols-3">
+      <section id="how" className="mx-auto w-full max-w-5xl px-6 py-24">
+        <div className="grid gap-8 sm:grid-cols-3">
           {benefits.map((b, i) => (
             <Reveal key={b.title} delay={i * 0.08}>
-              <div className="h-full rounded-2xl border border-slate-200/80 bg-white p-6">
-                <div className="flex size-11 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
-                  {b.icon}
+              <div className="group h-full rounded-2xl border border-slate-200 bg-white p-8 shadow-sm transition-all duration-300 hover:-translate-y-1.5 hover:border-blue-200 hover:shadow-xl hover:shadow-blue-500/10">
+                <div className="flex h-28 items-center justify-center rounded-xl border border-blue-100/70 bg-blue-50/60">
+                  {b.viz}
                 </div>
-                <h3 className="mt-4 text-lg font-semibold text-slate-900">
+                <h3 className="mt-6 text-xl font-semibold text-slate-900">
                   {b.title}
                 </h3>
-                <p className="mt-2 text-sm leading-relaxed text-slate-500">
+                <p className="mt-2.5 text-[15px] leading-relaxed text-slate-500">
                   {b.body}
                 </p>
               </div>
@@ -149,28 +128,33 @@ export default function Home() {
       {/* Download */}
       <section id="download" className="mx-auto w-full max-w-5xl px-6 pb-24">
         <Reveal>
-          <div className="rounded-3xl bg-blue-500 px-6 py-14 text-center text-white">
-            <h2 className="text-3xl font-semibold tracking-tight sm:text-4xl">
+          <div className="relative overflow-hidden rounded-3xl bg-linear-to-br from-blue-500 to-blue-600 px-6 py-16 text-center text-white shadow-xl shadow-blue-500/20">
+            <div className="pointer-events-none absolute -top-16 left-1/2 h-64 w-64 -translate-x-1/2 rounded-full bg-white/15 blur-3xl" />
+            <h2 className="relative text-3xl font-semibold tracking-tight sm:text-4xl">
               Get microhone
             </h2>
-            <p className="mx-auto mt-3 max-w-sm text-blue-50">
+            <p className="relative mx-auto mt-3 max-w-sm text-blue-50">
               Install it on your computer and your phone. Free, no account.
             </p>
-            <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
+            <div className="relative mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
               <a
                 href={WINDOWS_DOWNLOAD}
-                className="rounded-full bg-white px-6 py-3 font-medium text-blue-600 transition-transform hover:scale-[1.03]"
+                className="inline-flex items-center justify-center gap-2 rounded-full bg-white px-6 py-3 font-medium text-blue-600 shadow-lg shadow-blue-900/10 transition-all duration-200 hover:bg-blue-50 hover:text-blue-700 hover:shadow-xl active:scale-95"
               >
+                <DownloadIcon />
                 Windows
               </a>
               <a
                 href={ANDROID_DOWNLOAD}
-                className="rounded-full border border-white/40 px-6 py-3 font-medium text-white transition-colors hover:bg-white/10"
+                className="inline-flex items-center justify-center gap-2 rounded-full border border-white/50 px-6 py-3 font-medium text-white transition-all duration-200 hover:border-white hover:bg-white/15 active:scale-95"
               >
+                <DownloadIcon />
                 Android
               </a>
             </div>
-            <p className="mt-4 text-xs text-blue-100">macOS &amp; Linux soon.</p>
+            <p className="relative mt-4 text-xs text-blue-100">
+              Windows 10/11 and Android 8+ · macOS &amp; Linux soon.
+            </p>
           </div>
         </Reveal>
       </section>

@@ -8,6 +8,19 @@ This is throwaway scaffolding to prove the pipeline (Android capture → UDP →
 desktop playback). The real receive/decode/jitter-buffer logic later lives in
 `apps/desktop/src-tauri`.
 
+## Build requirement
+
+Opus (`magnum-opus`) builds libopus from source, which needs **CMake** and a C
+compiler on `PATH`:
+
+```powershell
+winget install -e --id Kitware.CMake
+```
+
+Then open a fresh terminal so `cmake` is on `PATH`. (MSVC from the Build Tools is
+already used for the C compiler.) If you only ever use `--pcm`, CMake is still
+required because the crate is compiled either way.
+
 ## Run
 
 ```bash

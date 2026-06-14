@@ -132,6 +132,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "cmake"
+version = "0.1.58"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c0f78a02292a74a88ac736019ab962ece0bc380e3f977bf72e376c5d78ff0678"
+dependencies = [
+ "cc",
+]
+
+[[package]]
 name = "combine"
 version = "4.6.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -378,6 +387,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "magnum-opus"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ff49ad2a7313ae476b292c1e1b6bf17ad0542fc1d24880d85d455d8547a3ecc2"
+dependencies = [
+ "libc",
+ "opusic-sys",
+]
+
+[[package]]
 name = "memchr"
 version = "2.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -389,6 +408,7 @@ version = "0.0.0"
 dependencies = [
  "anyhow",
  "cpal",
+ "magnum-opus",
 ]
 
 [[package]]
@@ -506,6 +526,16 @@ name = "once_cell"
 version = "1.21.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
+
+[[package]]
+name = "opusic-sys"
+version = "0.3.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5eace752ce07a037241dba8f02c654799f051e431b27028056bcb480e83b54f5"
+dependencies = [
+ "cmake",
+ "libc",
+]
 
 [[package]]
 name = "pin-project-lite"

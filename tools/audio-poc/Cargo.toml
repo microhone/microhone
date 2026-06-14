@@ -12,3 +12,4 @@ path = "src/main.rs"
 [dependencies]
 cpal = "0.15"
 anyhow = "1"
+magnum-opus = "0.3"

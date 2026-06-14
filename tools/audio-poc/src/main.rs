@@ -15,6 +15,10 @@
 //!   cargo run -- --device "CABLE Input"     # route into VB-CABLE
 //!   cargo run -- --device "CABLE Input" --port 50000
 //!   cargo run -- --latency 60               # target jitter-buffer latency (ms)
+//!   cargo run -- --pcm                      # raw PCM instead of Opus (faz 1 mode)
+//!
+//! Default codec is Opus (matches the Android app's default). Use --pcm on both
+//! sides to fall back to raw PCM.
 
 use std::collections::VecDeque;
 use std::net::UdpSocket;
@@ -22,6 +26,7 @@ use std::sync::{Arc, Mutex};
 
 use anyhow::{anyhow, Result};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use magnum_opus::{Channels, Decoder};
 
 /// Header is seq (u32) + timestamp (u32).
 const HEADER_LEN: usize = 8;
@@ -90,6 +95,7 @@ struct Args {
     device: Option<String>,
     list: bool,
     latency_ms: u32,
+    pcm: bool,
 }
 
 fn parse_args() -> Args {
@@ -97,10 +103,12 @@ fn parse_args() -> Args {
     let mut device = None;
     let mut list = false;
     let mut latency_ms = DEFAULT_LATENCY_MS;
+    let mut pcm = false;
     let mut it = std::env::args().skip(1);
     while let Some(arg) = it.next() {
         match arg.as_str() {
             "--list" | "-l" => list = true,
+            "--pcm" => pcm = true,
             "--device" | "-d" => device = it.next(),
             "--port" | "-p" => {
                 if let Some(v) = it.next() {
@@ -129,6 +137,7 @@ fn parse_args() -> Args {
         device,
         list,
         latency_ms,
+        pcm,
     }
 }
 
@@ -197,6 +206,17 @@ fn main() -> Result<()> {
     };
     stream.play()?;
 
+    // --- Codec ---
+    // Opus is always 48 kHz; max frame we ever decode is 120 ms mono.
+    let mut decoder = if args.pcm {
+        println!("Codec         : raw PCM");
+        None
+    } else {
+        println!("Codec         : Opus (48 kHz mono) with PLC");
+        Some(Decoder::new(48_000, Channels::Mono).map_err(|e| anyhow!("opus decoder: {e}"))?)
+    };
+    let mut decode_buf = vec![0f32; 5760];
+
     // --- UDP receiver ---
     let socket = UdpSocket::bind(("0.0.0.0", args.port))?;
     println!(
@@ -215,22 +235,46 @@ fn main() -> Result<()> {
         }
 
         let seq = u32::from_be_bytes([packet[0], packet[1], packet[2], packet[3]]);
-        if let Some(prev) = last_seq {
-            let gap = seq.wrapping_sub(prev);
-            if gap > 1 {
-                lost += (gap - 1) as u64;
-                if lost % 50 < (gap - 1) as u64 {
-                    eprintln!("packet loss: ~{lost} dropped so far");
-                }
+        let gap = last_seq.map(|prev| seq.wrapping_sub(prev)).unwrap_or(1);
+        if gap > 1 {
+            lost += (gap - 1) as u64;
+            if lost % 50 < (gap - 1) as u64 {
+                eprintln!("packet loss: ~{lost} dropped so far");
             }
         }
         last_seq = Some(seq);
 
         let payload = &packet[HEADER_LEN..n];
-        let samples = payload
-            .chunks_exact(2)
-            .map(|frame| i16::from_le_bytes([frame[0], frame[1]]) as f32 / 32768.0);
-        buffer.lock().unwrap().push_frame(samples);
+
+        match decoder.as_mut() {
+            // Opus: conceal small gaps with PLC, then decode the real packet.
+            Some(dec) => {
+                if (2..10).contains(&gap) {
+                    for _ in 0..gap - 1 {
+                        if let Ok(samples) = dec.decode_float(&[], &mut decode_buf, false) {
+                            buffer
+                                .lock()
+                                .unwrap()
+                                .push_frame(decode_buf[..samples].iter().copied());
+                        }
+                    }
+                }
+                match dec.decode_float(payload, &mut decode_buf, false) {
+                    Ok(samples) => buffer
+                        .lock()
+                        .unwrap()
+                        .push_frame(decode_buf[..samples].iter().copied()),
+                    Err(e) => eprintln!("opus decode error: {e}"),
+                }
+            }
+            // Raw PCM: little-endian i16 mono.
+            None => {
+                let samples = payload
+                    .chunks_exact(2)
+                    .map(|frame| i16::from_le_bytes([frame[0], frame[1]]) as f32 / 32768.0);
+                buffer.lock().unwrap().push_frame(samples);
+            }
+        }
     }
 }
 

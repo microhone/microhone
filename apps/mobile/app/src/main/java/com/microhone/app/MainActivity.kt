@@ -38,6 +38,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -190,6 +191,8 @@ fun PocScreen() {
     var autoConnect by remember { mutableStateOf(prefs.getBoolean("auto", false)) }
     var pairingLink by remember { mutableStateOf("") }
     var pairingKey by remember { mutableStateOf(decodeKey(prefs.getString("key", null))) }
+    var gain by remember { mutableFloatStateOf(prefs.getFloat("gain", 1f)) }
+    var gate by remember { mutableFloatStateOf(prefs.getFloat("gate", 0f)) }
     var muted by remember { mutableStateOf(false) }
     var showScanner by remember { mutableStateOf(false) }
     var streaming by remember { mutableStateOf(AudioEngine.streamer.isRunning) }
@@ -198,7 +201,7 @@ fun PocScreen() {
     var devices by remember { mutableStateOf<List<DiscoveredDevice>>(emptyList()) }
 
     // Remember the connection so the phone reconnects with one tap next time.
-    LaunchedEffect(host, port, useOpus, usb, autoConnect, pairingKey) {
+    LaunchedEffect(host, port, useOpus, usb, autoConnect, pairingKey, gain, gate) {
         prefs.edit()
             .putString("host", host)
             .putString("port", port)
@@ -206,7 +209,15 @@ fun PocScreen() {
             .putBoolean("usb", usb)
             .putBoolean("auto", autoConnect)
             .putString("key", encodeKey(pairingKey))
+            .putFloat("gain", gain)
+            .putFloat("gate", gate)
             .apply()
+    }
+
+    // Keep the live tuning in sync with the engine, even before streaming.
+    LaunchedEffect(gain, gate) {
+        AudioEngine.streamer.gain = gain
+        AudioEngine.streamer.gateThreshold = gate
     }
 
     val discovery = remember { DeviceDiscovery(context) }
@@ -523,6 +534,22 @@ fun PocScreen() {
                     enabled = !streaming,
                 )
             }
+        }
+
+        // Sound tuning (live)
+        SectionCard {
+            Text(
+                text = "Sound",
+                style = MaterialTheme.typography.labelMedium,
+                color = Slate500,
+            )
+            Text("Gain  ${String.format(java.util.Locale.US, "%.1f", gain)}×")
+            Slider(value = gain, onValueChange = { gain = it }, valueRange = 0.5f..3f)
+            Text(
+                text = "Noise gate  " +
+                    if (gate == 0f) "off" else String.format(java.util.Locale.US, "%.2f", gate),
+            )
+            Slider(value = gate, onValueChange = { gate = it }, valueRange = 0f..0.1f)
         }
     }
 }

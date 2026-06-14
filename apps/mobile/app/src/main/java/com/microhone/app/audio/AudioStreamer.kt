@@ -59,6 +59,14 @@ class AudioStreamer {
     @Volatile
     var muted: Boolean = false
 
+    /** Input gain multiplier applied before encoding (1.0 = unchanged). */
+    @Volatile
+    var gain: Float = 1f
+
+    /** Noise gate: frames whose peak is below this (0f..1f) are silenced. 0 = off. */
+    @Volatile
+    var gateThreshold: Float = 0f
+
     private var worker: Thread? = null
 
     @SuppressLint("MissingPermission")
@@ -144,8 +152,23 @@ class AudioStreamer {
                     }
                     if (read < SAMPLES_PER_FRAME) continue
 
-                    if (muted) java.util.Arrays.fill(samples, 0, read, 0.toShort())
-                    peakLevel = framePeak(samples, read)
+                    if (muted) {
+                        java.util.Arrays.fill(samples, 0, read, 0.toShort())
+                        peakLevel = 0f
+                    } else {
+                        val g = gain
+                        if (g != 1f) {
+                            for (i in 0 until read) {
+                                samples[i] = (samples[i] * g).toInt().coerceIn(-32768, 32767).toShort()
+                            }
+                        }
+                        var peak = framePeak(samples, read)
+                        if (gateThreshold > 0f && peak < gateThreshold) {
+                            java.util.Arrays.fill(samples, 0, read, 0.toShort())
+                            peak = 0f
+                        }
+                        peakLevel = peak
+                    }
 
                     val payload: ByteArray
                     val payloadLen: Int

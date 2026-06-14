@@ -8,6 +8,7 @@ function App() {
   const [port, setPort] = useState("47801");
   const [latency, setLatency] = useState("40");
   const [pcm, setPcm] = useState(false);
+  const [usb, setUsb] = useState(false);
   const [running, setRunning] = useState(false);
   const [status, setStatus] = useState("Idle");
   const [level, setLevel] = useState(0);
@@ -36,6 +37,7 @@ function App() {
         port: parseInt(port, 10),
         latencyMs: parseInt(latency, 10),
         pcm,
+        usb,
       });
       setRunning(true);
     } catch (e) {
@@ -106,6 +108,16 @@ function App() {
           disabled={running}
         />
         Raw PCM (instead of Opus)
+      </label>
+
+      <label className="flex items-center gap-2 text-sm text-white/60">
+        <input
+          type="checkbox"
+          checked={usb}
+          onChange={(e) => setUsb(e.target.checked)}
+          disabled={running}
+        />
+        USB cable (adb reverse · low latency)
       </label>
 
       <div className="h-3 w-full overflow-hidden rounded-full bg-white/10">

@@ -36,12 +36,13 @@ fn start_receiver(
     port: u16,
     latency_ms: u32,
     pcm: bool,
+    usb: bool,
 ) -> Result<(), String> {
     let mut guard = state.lock().map_err(|e| e.to_string())?;
     if let Some(mut existing) = guard.take() {
         existing.stop();
     }
-    let receiver = Receiver::start(app, device, port, latency_ms, pcm)?;
+    let receiver = Receiver::start(app, device, port, latency_ms, pcm, usb)?;
     *guard = Some(receiver);
     Ok(())
 }

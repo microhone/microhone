@@ -5,15 +5,19 @@ on:
     tags:
       - "v*"
 
+# The code repo can stay private; artifacts are published to a small public
+# "releases" repo (so the public site can link to them). Configure:
+#   - vars.RELEASES_REPO       e.g. canbedir/microhone-releases (public)
+#   - secrets.RELEASES_TOKEN   PAT with contents:write on that repo
+#   - secrets.ANDROID_KEYSTORE_BASE64 / _PASSWORD, ANDROID_KEY_ALIAS / _PASSWORD
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   desktop:
     name: Desktop installers
     runs-on: windows-latest
     env:
-      # The runner ships CMake 4; allow the old minimum used by libopus.
       CMAKE_POLICY_VERSION_MINIMUM: "3.5"
     steps:
       - uses: actions/checkout@v4
@@ -29,12 +33,18 @@ jobs:
           workspaces: apps/desktop/src-tauri
       - name: Build installers (NSIS + MSI)
         run: pnpm --filter @microhone/desktop tauri build
-      - name: Attach to the release
+      - name: Stage artifacts with stable names
+        shell: bash
+        run: |
+          mkdir dist-release
+          cp apps/desktop/src-tauri/target/release/bundle/nsis/*-setup.exe dist-release/microhone-windows-setup.exe
+          cp apps/desktop/src-tauri/target/release/bundle/msi/*.msi dist-release/microhone-windows.msi
+      - name: Publish to the releases repo
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            apps/desktop/src-tauri/target/release/bundle/nsis/*-setup.exe
-            apps/desktop/src-tauri/target/release/bundle/msi/*.msi
+          repository: ${{ vars.RELEASES_REPO }}
+          token: ${{ secrets.RELEASES_TOKEN }}
+          files: dist-release/*
 
   android:
     name: Android signed APK
@@ -63,7 +73,13 @@ jobs:
         run: |
           chmod +x gradlew
           ./gradlew assembleRelease --no-daemon
-      - name: Attach to the release
+      - name: Stage artifact with a stable name
+        run: |
+          mkdir dist-release
+          cp apps/mobile/app/build/outputs/apk/release/app-release.apk dist-release/microhone-android.apk
+      - name: Publish to the releases repo
         uses: softprops/action-gh-release@v2
         with:
-          files: apps/mobile/app/build/outputs/apk/release/app-release.apk
+          repository: ${{ vars.RELEASES_REPO }}
+          token: ${{ secrets.RELEASES_TOKEN }}
+          files: dist-release/*

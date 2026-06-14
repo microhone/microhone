@@ -2,8 +2,11 @@ import type { ReactNode } from "react";
 import { Reveal } from "./components/reveal";
 import { HeroVisual } from "./components/hero-visual";
 
-const GITHUB_URL = "https://github.com/canbedir/microhone";
-const RELEASES_URL = `${GITHUB_URL}/releases/latest`;
+// Public "releases" repo that CI publishes artifacts to (code repo stays private).
+const RELEASES_REPO = "https://github.com/microhone/microhone";
+const GITHUB_URL = RELEASES_REPO;
+const WINDOWS_DOWNLOAD = `${RELEASES_REPO}/releases/latest/download/microhone-windows-setup.exe`;
+const ANDROID_DOWNLOAD = `${RELEASES_REPO}/releases/latest/download/microhone-android.apk`;
 
 function BoltIcon() {
   return (
@@ -155,13 +158,13 @@ export default function Home() {
             </p>
             <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
               <a
-                href={RELEASES_URL}
+                href={WINDOWS_DOWNLOAD}
                 className="rounded-full bg-white px-6 py-3 font-medium text-blue-600 transition-transform hover:scale-[1.03]"
               >
                 Windows
               </a>
               <a
-                href={RELEASES_URL}
+                href={ANDROID_DOWNLOAD}
                 className="rounded-full border border-white/40 px-6 py-3 font-medium text-white transition-colors hover:bg-white/10"
               >
                 Android

@@ -3,8 +3,10 @@ package com.microhone.app
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.util.Base64
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -65,6 +67,22 @@ fun MicrohoneTheme(content: @Composable () -> Unit) {
     MaterialTheme(colorScheme = darkColorScheme(), content = content)
 }
 
+/** Parsed `microhone://pair?h=..&p=..&k=..` link: host, port and 32-byte key. */
+data class Pairing(val host: String, val port: Int, val key: ByteArray)
+
+fun parsePairing(link: String): Pairing? {
+    val uri = runCatching { Uri.parse(link.trim()) }.getOrNull() ?: return null
+    if (uri.scheme != "microhone") return null
+    val host = uri.getQueryParameter("h") ?: return null
+    val port = uri.getQueryParameter("p")?.toIntOrNull() ?: return null
+    val keyParam = uri.getQueryParameter("k") ?: return null
+    val key = runCatching {
+        Base64.decode(keyParam, Base64.URL_SAFE or Base64.NO_PADDING or Base64.NO_WRAP)
+    }.getOrNull() ?: return null
+    if (key.size != 32) return null
+    return Pairing(host, port, key)
+}
+
 @Composable
 fun PocScreen() {
     val context = LocalContext.current
@@ -73,6 +91,8 @@ fun PocScreen() {
     var port by remember { mutableStateOf("47801") }
     var useOpus by remember { mutableStateOf(true) }
     var usb by remember { mutableStateOf(false) }
+    var pairingLink by remember { mutableStateOf("") }
+    var pairingKey by remember { mutableStateOf<ByteArray?>(null) }
     var streaming by remember { mutableStateOf(AudioEngine.streamer.isRunning) }
     var status by remember { mutableStateOf<String?>(null) }
     var level by remember { mutableFloatStateOf(0f) }
@@ -107,11 +127,13 @@ fun PocScreen() {
             putExtra(MicForegroundService.EXTRA_PORT, parsedPort)
             putExtra(MicForegroundService.EXTRA_OPUS, useOpus)
             putExtra(MicForegroundService.EXTRA_USB, usb)
+            putExtra(MicForegroundService.EXTRA_KEY, pairingKey)
         }
         ContextCompat.startForegroundService(context, intent)
         streaming = true
         val link = if (usb) "USB" else "WiFi"
-        status = "Streaming to $host:$parsedPort ($link, ${if (useOpus) "Opus" else "PCM"})"
+        val lock = if (pairingKey != null) ", 🔒" else ""
+        status = "Streaming to $host:$parsedPort ($link, ${if (useOpus) "Opus" else "PCM"}$lock)"
     }
 
     fun stopStreaming() {
@@ -166,6 +188,29 @@ fun PocScreen() {
         Text(
             text = "audio PoC",
             style = MaterialTheme.typography.bodyMedium,
+        )
+
+        OutlinedTextField(
+            value = pairingLink,
+            onValueChange = { value ->
+                pairingLink = value
+                val parsed = parsePairing(value)
+                if (parsed != null) {
+                    host = parsed.host
+                    port = parsed.port.toString()
+                    pairingKey = parsed.key
+                } else if (value.isBlank()) {
+                    pairingKey = null
+                }
+            },
+            label = { Text("Pairing link from PC (optional)") },
+            placeholder = { Text("microhone://pair?…") },
+            singleLine = true,
+            enabled = !streaming,
+            supportingText = {
+                if (pairingKey != null) Text("🔒 Paired — audio will be encrypted")
+            },
+            modifier = Modifier.fillMaxWidth(),
         )
 
         if (devices.isNotEmpty()) {

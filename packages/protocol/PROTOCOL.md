@@ -104,9 +104,27 @@ so the jitter buffer can be smaller.
 
 ---
 
-## 3. Security (later phases)
+## 3. Security — pairing & encryption
 
-Pairing establishes a session key (QR carries `{host, port, token/pubkey}`).
-Target: Noise Protocol or libsodium for an end-to-end encrypted channel; at
-minimum AES over the audio channel after a handshake. Paired devices are
-remembered so the QR scan is a one-time step. See `microhone-plan.md` §7.
+Pairing is optional. When enabled, the desktop generates a random 32-byte key
+and shows it as a QR / link:
+
+```
+microhone://pair?h=<host>&p=<port>&k=<base64url 32-byte key>
+```
+
+The phone reads it (scan or paste) and then **encrypts every audio frame** with
+**AES-256-GCM**. The plaintext is the normal frame `[seq][timestamp][payload]`;
+the wire packet becomes:
+
+```
+[ nonce: 12 bytes ][ AES-256-GCM ciphertext + 16-byte tag ]
+```
+
+- A fresh random 96-bit `nonce` per packet is prepended (it need not be secret).
+- The desktop decrypts with the key; packets that fail authentication are
+  dropped, so only a paired sender is heard (and the audio is confidential on
+  the LAN). On TCP/USB the length prefix covers the whole encrypted packet.
+
+This is the MVP. A future step may add a Noise-style handshake and remembered
+devices so pairing is a one-time step. See `microhone-plan.md` §7.

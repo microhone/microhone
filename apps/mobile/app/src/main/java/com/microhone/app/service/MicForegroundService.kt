@@ -28,6 +28,7 @@ class MicForegroundService : Service() {
         const val EXTRA_PORT = "port"
         const val EXTRA_OPUS = "opus"
         const val EXTRA_USB = "usb"
+        const val EXTRA_KEY = "key"
         private const val CHANNEL_ID = "microhone_capture"
         private const val NOTIF_ID = 1
     }
@@ -49,10 +50,11 @@ class MicForegroundService : Service() {
         val port = intent.getIntExtra(EXTRA_PORT, 47801)
         val opus = intent.getBooleanExtra(EXTRA_OPUS, true)
         val usb = intent.getBooleanExtra(EXTRA_USB, false)
+        val key = intent.getByteArrayExtra(EXTRA_KEY)
 
         startAsForeground()
         AudioEngine.lastError = null
-        AudioEngine.streamer.start(host, port, opus, usb) { message ->
+        AudioEngine.streamer.start(host, port, opus, usb, key) { message ->
             AudioEngine.lastError = message
             stopSelf()
         }

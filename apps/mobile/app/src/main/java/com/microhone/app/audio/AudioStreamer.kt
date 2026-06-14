@@ -14,6 +14,10 @@ import java.net.DatagramSocket
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.Socket
+import java.security.SecureRandom
+import javax.crypto.Cipher
+import javax.crypto.spec.GCMParameterSpec
+import javax.crypto.spec.SecretKeySpec
 import kotlin.concurrent.thread
 import kotlin.math.abs
 
@@ -38,6 +42,8 @@ class AudioStreamer {
         const val SAMPLES_PER_FRAME = SAMPLE_RATE * FRAME_MS / 1000 // 480
         private const val BYTES_PER_SAMPLE = 2
         private const val HEADER_LEN = 8
+        private const val NONCE_LEN = 12
+        private const val GCM_TAG_LEN = 16
     }
 
     @Volatile
@@ -53,7 +59,14 @@ class AudioStreamer {
 
     @SuppressLint("MissingPermission")
     @RequiresPermission(Manifest.permission.RECORD_AUDIO)
-    fun start(host: String, port: Int, useOpus: Boolean, usb: Boolean, onError: (String) -> Unit) {
+    fun start(
+        host: String,
+        port: Int,
+        useOpus: Boolean,
+        usb: Boolean,
+        key: ByteArray?,
+        onError: (String) -> Unit,
+    ) {
         if (isRunning) return
         isRunning = true
         worker = thread(name = "microhone-mic-net") {
@@ -99,11 +112,20 @@ class AudioStreamer {
                 }
                 record.startRecording()
 
+                // Optional AES-256-GCM: only a paired sender (with the key) is
+                // accepted and the audio is encrypted on the wire.
+                val keySpec = key?.let { SecretKeySpec(it, "AES") }
+                val cipher = keySpec?.let { Cipher.getInstance("AES/GCM/NoPadding") }
+                val random = cipher?.let { SecureRandom() }
+                val nonce = ByteArray(NONCE_LEN)
+
                 val samples = ShortArray(SAMPLES_PER_FRAME)
                 val pcmBytes = ByteArray(SAMPLES_PER_FRAME * BYTES_PER_SAMPLE)
                 val opusBytes = ByteArray(1275) // max Opus packet for one mono frame
-                // Reused header+payload buffer (PCM is the larger of the two).
-                val packet = ByteArray(HEADER_LEN + pcmBytes.size)
+                // Reused header+payload buffer (Opus is the larger of the two).
+                val packet = ByteArray(HEADER_LEN + maxOf(pcmBytes.size, opusBytes.size))
+                // nonce + ciphertext + GCM tag for the encrypted path.
+                val secureBuf = ByteArray(NONCE_LEN + packet.size + GCM_TAG_LEN)
                 val lenPrefix = ByteArray(2) // u16 frame length for the TCP stream
                 var seq = 0
                 var timestamp = 0
@@ -141,15 +163,30 @@ class AudioStreamer {
                     System.arraycopy(payload, 0, packet, HEADER_LEN, payloadLen)
                     val frameLen = HEADER_LEN + payloadLen
 
+                    // Build the wire bytes: encrypted (nonce + ciphertext) or plain.
+                    val wire: ByteArray
+                    val wireLen: Int
+                    if (cipher != null) {
+                        random!!.nextBytes(nonce)
+                        cipher.init(Cipher.ENCRYPT_MODE, keySpec, GCMParameterSpec(128, nonce))
+                        System.arraycopy(nonce, 0, secureBuf, 0, NONCE_LEN)
+                        val ctLen = cipher.doFinal(packet, 0, frameLen, secureBuf, NONCE_LEN)
+                        wire = secureBuf
+                        wireLen = NONCE_LEN + ctLen
+                    } else {
+                        wire = packet
+                        wireLen = frameLen
+                    }
+
                     val out = tcpOut
                     if (out != null) {
-                        lenPrefix[0] = (frameLen ushr 8).toByte()
-                        lenPrefix[1] = frameLen.toByte()
+                        lenPrefix[0] = (wireLen ushr 8).toByte()
+                        lenPrefix[1] = wireLen.toByte()
                         out.write(lenPrefix)
-                        out.write(packet, 0, frameLen)
+                        out.write(wire, 0, wireLen)
                         out.flush()
                     } else {
-                        udp!!.send(DatagramPacket(packet, frameLen, address, port))
+                        udp!!.send(DatagramPacket(wire, wireLen, address, port))
                     }
 
                     seq++

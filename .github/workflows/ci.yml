@@ -27,6 +27,10 @@ jobs:
   desktop:
     name: Desktop (Tauri core)
     runs-on: windows-latest
+    env:
+      # The runner ships CMake 4, which dropped compatibility with the old
+      # cmake_minimum_required in libopus (via opusic-sys). Allow it.
+      CMAKE_POLICY_VERSION_MINIMUM: "3.5"
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4

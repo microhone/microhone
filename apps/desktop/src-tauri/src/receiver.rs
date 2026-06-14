@@ -24,10 +24,16 @@ use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
+use aes_gcm::aead::{Aead, KeyInit};
+use aes_gcm::{Aes256Gcm, Key, Nonce};
+use base64::Engine;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use magnum_opus::{Channels, Decoder};
 use mdns_sd::{ServiceDaemon, ServiceInfo};
 use tauri::{AppHandle, Emitter};
+
+/// GCM nonce length in bytes, prepended to every encrypted packet.
+const NONCE_LEN: usize = 12;
 
 const HEADER_LEN: usize = 8;
 const MAX_FRAME: usize = 4096;
@@ -186,15 +192,27 @@ impl Receiver {
         latency_ms: u32,
         pcm: bool,
         usb: bool,
+        secure: bool,
     ) -> Result<Self, String> {
         // WiFi clients discover us via mDNS; USB clients connect through the tunnel.
         let mdns = if usb { None } else { advertise_mdns(port).ok() };
+
+        // When pairing is required, generate a one-off key and show it as a QR
+        // (and a link) the phone can use to encrypt the audio.
+        let key: Option<[u8; 32]> = if secure {
+            let key: [u8; 32] = rand::random();
+            emit_pairing(&app, port, usb, &key);
+            Some(key)
+        } else {
+            None
+        };
+
         let stop = Arc::new(AtomicBool::new(false));
         let stop_thread = stop.clone();
         let thread = thread::Builder::new()
             .name("microhone-receiver".into())
             .spawn(move || {
-                if let Err(e) = run(&app, device, port, latency_ms, pcm, usb, stop_thread) {
+                if let Err(e) = run(&app, device, port, latency_ms, pcm, usb, key, stop_thread) {
                     let _ = app.emit("receiver-error", e);
                 }
             })
@@ -218,6 +236,37 @@ impl Drop for Receiver {
     fn drop(&mut self) {
         self.stop();
     }
+}
+
+/// Best-effort primary LAN IPv4, found by opening a throwaway UDP socket.
+fn local_ipv4() -> String {
+    UdpSocket::bind("0.0.0.0:0")
+        .and_then(|s| {
+            s.connect("8.8.8.8:80")?;
+            s.local_addr()
+        })
+        .map(|addr| addr.ip().to_string())
+        .unwrap_or_else(|_| "127.0.0.1".to_string())
+}
+
+/// Emit the pairing payload (a `microhone://` link) and a QR SVG for the phone.
+fn emit_pairing(app: &AppHandle, port: u16, usb: bool, key: &[u8; 32]) {
+    let host = if usb { "127.0.0.1".to_string() } else { local_ipv4() };
+    let key_b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(key);
+    let link = format!("microhone://pair?h={host}&p={port}&k={key_b64}");
+
+    let svg = qrcode::QrCode::new(link.as_bytes())
+        .map(|code| {
+            code.render::<qrcode::render::svg::Color>()
+                .min_dimensions(220, 220)
+                .quiet_zone(true)
+                .dark_color(qrcode::render::svg::Color("#0b1220"))
+                .light_color(qrcode::render::svg::Color("#ffffff"))
+                .build()
+        })
+        .unwrap_or_default();
+
+    let _ = app.emit("pairing", serde_json::json!({ "link": link, "svg": svg }));
 }
 
 fn advertise_mdns(port: u16) -> Result<ServiceDaemon, String> {
@@ -244,6 +293,7 @@ fn run(
     latency_ms: u32,
     pcm: bool,
     usb: bool,
+    key: Option<[u8; 32]>,
     stop: Arc<AtomicBool>,
 ) -> Result<(), String> {
     let host = cpal::default_host();
@@ -292,21 +342,45 @@ fn run(
 
     let mut pipeline = Pipeline::new(app.clone(), buffer.clone(), pcm)?;
     let mut scratch = vec![0f32; 5760];
+    let cipher = key.map(|k| Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&k)));
 
     if usb {
-        run_tcp(app, port, &mut pipeline, &mut scratch, &stop)?;
+        run_tcp(app, port, &mut pipeline, &mut scratch, cipher.as_ref(), &stop)?;
     } else {
-        run_udp(port, &mut pipeline, &mut scratch, &stop)?;
+        run_udp(port, &mut pipeline, &mut scratch, cipher.as_ref(), &stop)?;
     }
 
     let _ = app.emit("receiver-level", 0.0f32);
     Ok(())
 }
 
+/// Decrypt (when paired) then hand the plaintext frame to the pipeline. A packet
+/// that fails authentication is silently dropped, so only paired senders are heard.
+fn feed(
+    cipher: Option<&Aes256Gcm>,
+    raw: &[u8],
+    pipeline: &mut Pipeline,
+    scratch: &mut [f32],
+) {
+    match cipher {
+        Some(c) => {
+            if raw.len() <= NONCE_LEN {
+                return;
+            }
+            let (nonce, ct) = raw.split_at(NONCE_LEN);
+            if let Ok(plain) = c.decrypt(Nonce::from_slice(nonce), ct) {
+                pipeline.process(&plain, scratch);
+            }
+        }
+        None => pipeline.process(raw, scratch),
+    }
+}
+
 fn run_udp(
     port: u16,
     pipeline: &mut Pipeline,
     scratch: &mut [f32],
+    cipher: Option<&Aes256Gcm>,
     stop: &AtomicBool,
 ) -> Result<(), String> {
     let socket = UdpSocket::bind(("0.0.0.0", port)).map_err(|e| e.to_string())?;
@@ -316,7 +390,7 @@ fn run_udp(
     let mut packet = [0u8; MAX_FRAME];
     while !stop.load(Ordering::Relaxed) {
         match socket.recv_from(&mut packet) {
-            Ok((n, _)) => pipeline.process(&packet[..n], scratch),
+            Ok((n, _)) => feed(cipher, &packet[..n], pipeline, scratch),
             Err(ref e) if e.kind() == ErrorKind::WouldBlock || e.kind() == ErrorKind::TimedOut => {
                 continue
             }
@@ -331,6 +405,7 @@ fn run_tcp(
     port: u16,
     pipeline: &mut Pipeline,
     scratch: &mut [f32],
+    cipher: Option<&Aes256Gcm>,
     stop: &AtomicBool,
 ) -> Result<(), String> {
     // Tunnel the phone's localhost:port to ours via adb, so it can connect over USB.
@@ -374,7 +449,7 @@ fn run_tcp(
         if !read_full(&mut stream, &mut frame[..len], stop).map_err(|e| e.to_string())? {
             break;
         }
-        pipeline.process(&frame[..len], scratch);
+        feed(cipher, &frame[..len], pipeline, scratch);
     }
     Ok(())
 }

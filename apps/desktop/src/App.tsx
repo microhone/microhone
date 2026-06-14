@@ -9,6 +9,10 @@ function App() {
   const [latency, setLatency] = useState("40");
   const [pcm, setPcm] = useState(false);
   const [usb, setUsb] = useState(false);
+  const [secure, setSecure] = useState(false);
+  const [pairing, setPairing] = useState<{ link: string; svg: string } | null>(
+    null,
+  );
   const [running, setRunning] = useState(false);
   const [status, setStatus] = useState("Idle");
   const [level, setLevel] = useState(0);
@@ -19,6 +23,9 @@ function App() {
     const subs: Promise<UnlistenFn>[] = [
       listen<number>("receiver-level", (e) => setLevel(e.payload)),
       listen<string>("receiver-status", (e) => setStatus(e.payload)),
+      listen<{ link: string; svg: string }>("pairing", (e) =>
+        setPairing(e.payload),
+      ),
       listen<string>("receiver-error", (e) => {
         setStatus(`Error: ${e.payload}`);
         setRunning(false);
@@ -32,12 +39,14 @@ function App() {
 
   async function start() {
     try {
+      setPairing(null);
       await invoke("start_receiver", {
         device: device || null,
         port: parseInt(port, 10),
         latencyMs: parseInt(latency, 10),
         pcm,
         usb,
+        secure,
       });
       setRunning(true);
     } catch (e) {
@@ -50,6 +59,7 @@ function App() {
     setRunning(false);
     setStatus("Idle");
     setLevel(0);
+    setPairing(null);
   }
 
   return (
@@ -119,6 +129,29 @@ function App() {
         />
         USB cable (adb reverse · low latency)
       </label>
+
+      <label className="flex items-center gap-2 text-sm text-white/60">
+        <input
+          type="checkbox"
+          checked={secure}
+          onChange={(e) => setSecure(e.target.checked)}
+          disabled={running}
+        />
+        Require pairing (encrypt the audio)
+      </label>
+
+      {pairing && (
+        <div className="flex flex-col items-center gap-2 rounded-lg border border-white/10 bg-white/5 p-4">
+          <span className="text-sm text-white/70">Scan to pair your phone</span>
+          <div
+            className="overflow-hidden rounded-md bg-white p-2"
+            dangerouslySetInnerHTML={{ __html: pairing.svg }}
+          />
+          <span className="break-all text-center font-mono text-[10px] text-white/40">
+            {pairing.link}
+          </span>
+        </div>
+      )}
 
       <div className="h-3 w-full overflow-hidden rounded-full bg-white/10">
         <div

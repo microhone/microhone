@@ -14,6 +14,7 @@
 //!   cargo run                               # default speakers, port 47801
 //!   cargo run -- --device "CABLE Input"     # route into VB-CABLE
 //!   cargo run -- --device "CABLE Input" --port 50000
+//!   cargo run -- --latency 60               # target jitter-buffer latency (ms)
 
 use std::collections::VecDeque;
 use std::net::UdpSocket;
@@ -26,22 +27,76 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 const HEADER_LEN: usize = 8;
 /// Stream sample rate the Android client captures at.
 const STREAM_SAMPLE_RATE: u32 = 48_000;
-/// Cap the playback buffer (~1s @ 48k) so latency can't run away if the
-/// network bursts. On overflow we drop the backlog and resync.
-const MAX_BUFFER_SAMPLES: usize = STREAM_SAMPLE_RATE as usize;
+/// Default target latency held in the jitter buffer.
+const DEFAULT_LATENCY_MS: u32 = 40;
 
-type SampleBuffer = Arc<Mutex<VecDeque<f32>>>;
+type SharedJitter = Arc<Mutex<JitterBuffer>>;
+
+/// A minimal adaptive-ish jitter buffer.
+///
+/// It holds mono samples and aims to keep roughly `target` of them queued:
+/// - **Priming:** after startup or an underrun it outputs silence until it has
+///   buffered `target` samples, so playback starts with a cushion instead of
+///   crackling.
+/// - **Overflow:** if the queue grows past `max` (network burst / clock drift)
+///   it drops the oldest samples back down to `target`, trading a tiny skip for
+///   bounded latency instead of an ever-growing delay.
+struct JitterBuffer {
+    samples: VecDeque<f32>,
+    priming: bool,
+    target: usize,
+    max: usize,
+}
+
+impl JitterBuffer {
+    fn new(target: usize) -> Self {
+        Self {
+            samples: VecDeque::new(),
+            priming: true,
+            target,
+            max: target * 4,
+        }
+    }
+
+    /// Append a decoded frame, trimming back to `target` on overflow.
+    fn push_frame<I: IntoIterator<Item = f32>>(&mut self, frame: I) {
+        self.samples.extend(frame);
+        if self.samples.len() > self.max {
+            let overflow = self.samples.len() - self.target;
+            self.samples.drain(0..overflow);
+        }
+    }
+
+    /// Pull one sample for the output callback (silence while priming/underrun).
+    fn pop(&mut self) -> f32 {
+        if self.priming {
+            if self.samples.len() < self.target {
+                return 0.0;
+            }
+            self.priming = false;
+        }
+        match self.samples.pop_front() {
+            Some(s) => s,
+            None => {
+                self.priming = true; // re-prime after an underrun
+                0.0
+            }
+        }
+    }
+}
 
 struct Args {
     port: u16,
     device: Option<String>,
     list: bool,
+    latency_ms: u32,
 }
 
 fn parse_args() -> Args {
     let mut port = 47801u16;
     let mut device = None;
     let mut list = false;
+    let mut latency_ms = DEFAULT_LATENCY_MS;
     let mut it = std::env::args().skip(1);
     while let Some(arg) = it.next() {
         match arg.as_str() {
@@ -54,6 +109,13 @@ fn parse_args() -> Args {
                     }
                 }
             }
+            "--latency" => {
+                if let Some(v) = it.next() {
+                    if let Ok(ms) = v.parse() {
+                        latency_ms = ms;
+                    }
+                }
+            }
             // bare number is treated as the port for convenience
             other => {
                 if let Ok(p) = other.parse::<u16>() {
@@ -62,7 +124,12 @@ fn parse_args() -> Args {
             }
         }
     }
-    Args { port, device, list }
+    Args {
+        port,
+        device,
+        list,
+        latency_ms,
+    }
 }
 
 fn main() -> Result<()> {
@@ -77,8 +144,6 @@ fn main() -> Result<()> {
         println!("\nRoute into one with: --device \"<part of the name>\"");
         return Ok(());
     }
-
-    let buffer: SampleBuffer = Arc::new(Mutex::new(VecDeque::new()));
 
     // --- Output device (cpal) ---
     let device = match &args.device {
@@ -117,6 +182,11 @@ fn main() -> Result<()> {
              pitch will be off. Set this device's default format to 48000 Hz (resampling lands later)."
         );
     }
+
+    // Jitter buffer sized in samples at the *output* rate.
+    let target_samples = (sample_rate as u64 * args.latency_ms as u64 / 1000) as usize;
+    println!("Jitter buffer : ~{} ms target ({} samples)", args.latency_ms, target_samples);
+    let buffer: SharedJitter = Arc::new(Mutex::new(JitterBuffer::new(target_samples.max(1))));
 
     let config: cpal::StreamConfig = supported.into();
     let stream = match sample_format {
@@ -157,14 +227,10 @@ fn main() -> Result<()> {
         last_seq = Some(seq);
 
         let payload = &packet[HEADER_LEN..n];
-        let mut guard = buffer.lock().unwrap();
-        if guard.len() > MAX_BUFFER_SAMPLES {
-            guard.clear(); // resync on overflow
-        }
-        for frame in payload.chunks_exact(2) {
-            let s = i16::from_le_bytes([frame[0], frame[1]]);
-            guard.push_back(s as f32 / 32768.0);
-        }
+        let samples = payload
+            .chunks_exact(2)
+            .map(|frame| i16::from_le_bytes([frame[0], frame[1]]) as f32 / 32768.0);
+        buffer.lock().unwrap().push_frame(samples);
     }
 }
 
@@ -173,7 +239,7 @@ fn main() -> Result<()> {
 fn build_stream<T>(
     device: &cpal::Device,
     config: &cpal::StreamConfig,
-    buffer: SampleBuffer,
+    buffer: SharedJitter,
     channels: usize,
 ) -> Result<cpal::Stream>
 where
@@ -185,8 +251,7 @@ where
         move |data: &mut [T], _: &cpal::OutputCallbackInfo| {
             let mut guard = buffer.lock().unwrap();
             for frame in data.chunks_mut(channels) {
-                let sample = guard.pop_front().unwrap_or(0.0);
-                let value = T::from_sample(sample);
+                let value = T::from_sample(guard.pop());
                 for out in frame.iter_mut() {
                     *out = value;
                 }

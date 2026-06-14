@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  site:
+    name: Site (Next.js)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @microhone/site lint
+      - run: pnpm --filter @microhone/site build
+
+  desktop:
+    name: Desktop (Tauri core)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # The Rust build reads ../dist, so build the frontend first.
+      - run: pnpm --filter @microhone/desktop build
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri
+      # CMake (for libopus via magnum-opus) ships on the Windows runner.
+      - run: cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml
+
+  android:
+    name: Android (debug build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: android-actions/setup-android@v3
+      - run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+      - name: Build debug APK
+        working-directory: apps/mobile
+        run: ./gradlew assembleDebug --no-daemon

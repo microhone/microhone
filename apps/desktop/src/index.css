@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 :root {
-  color-scheme: dark;
+  color-scheme: light;
 }
 
 html,
@@ -9,4 +9,17 @@ body,
 #root {
   height: 100%;
   margin: 0;
+}
+
+body {
+  font-family: "Inter Variable", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Tailwind v4 defaults buttons to cursor:default — restore pointers. */
+button:not(:disabled),
+[role="switch"]:not(:disabled),
+select:not(:disabled),
+label:has(> input[type="checkbox"]:not(:disabled)) {
+  cursor: pointer;
 }

@@ -1,0 +1,8 @@
+packages:
+  - "apps/site"
+  - "apps/desktop"
+  - "packages/*"
+allowBuilds:
+  esbuild: true
+  sharp: true
+  unrs-resolver: true

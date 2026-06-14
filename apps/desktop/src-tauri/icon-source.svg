@@ -1,0 +1,21 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1b1b1f"/>
+      <stop offset="1" stop-color="#050505"/>
+    </linearGradient>
+    <linearGradient id="mic" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#b9b9c6"/>
+    </linearGradient>
+  </defs>
+  <rect width="1024" height="1024" rx="224" fill="url(#bg)"/>
+  <!-- mic capsule -->
+  <rect x="412" y="232" width="200" height="380" rx="100" fill="url(#mic)"/>
+  <!-- arc -->
+  <path d="M320 520 a192 192 0 0 0 384 0" fill="none" stroke="url(#mic)" stroke-width="44" stroke-linecap="round"/>
+  <!-- stand -->
+  <rect x="490" y="700" width="44" height="92" rx="22" fill="url(#mic)"/>
+  <!-- base -->
+  <rect x="392" y="788" width="240" height="44" rx="22" fill="url(#mic)"/>
+</svg>

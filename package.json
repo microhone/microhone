@@ -1,0 +1,20 @@
+{
+  "name": "microhone",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Turn your phone's microphone into a real microphone on your computer.",
+  "packageManager": "pnpm@11.6.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "site:dev": "pnpm --filter @microhone/site dev",
+    "desktop:dev": "pnpm --filter @microhone/desktop dev"
+  },
+  "devDependencies": {
+    "turbo": "^2.5.0"
+  }
+}

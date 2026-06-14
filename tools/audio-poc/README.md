@@ -12,12 +12,19 @@ desktop playback). The real receive/decode/jitter-buffer logic later lives in
 
 ```bash
 cd tools/audio-poc
-cargo run                 # listens on UDP 47801
-cargo run -- 50000        # custom port
+cargo run                            # default speakers, UDP 47801
+cargo run -- --list                  # list output devices
+cargo run -- --device "CABLE Input"  # route into a virtual device (faz 2)
+cargo run -- --device "CABLE Input" --port 50000
 ```
 
 Then point the Android app at this PC's LAN IP and the same port, and press
-Start. You should hear your phone's mic from the PC speakers.
+Start.
+
+- **Faz 1:** default device → you hear your phone's mic from the PC speakers.
+- **Faz 2:** route into VB-CABLE's "CABLE Input"; then pick "CABLE Output (VB-Audio
+  Virtual Cable)" as the microphone in Discord/OBS. Set the CABLE device's default
+  format to 48000 Hz so the pitch is correct.
 
 ## Notes
 

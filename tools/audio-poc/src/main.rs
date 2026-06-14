@@ -1,12 +1,19 @@
-//! microhone — Faz 1 audio PoC (receiver).
+//! microhone — Faz 1/2 audio PoC (receiver).
 //!
 //! Listens for the audio channel described in `packages/protocol/PROTOCOL.md`:
 //! each UDP packet is `[ seq:u32 BE ][ timestamp:u32 BE ][ pcm_s16le mono ]`.
-//! Incoming samples are pushed into a small ring buffer and played on the
-//! default output device with cpal. No codec, no jitter adaptation yet — this
-//! exists only to prove capture -> transport -> playback end to end.
+//! Incoming samples are pushed into a small ring buffer and played on an
+//! output device with cpal. No codec, no jitter adaptation yet — this exists
+//! only to prove capture -> transport -> playback end to end.
 //!
-//! Usage: `cargo run -- [port]`   (default port 47801)
+//! Faz 2: pick a *virtual* output device (e.g. VB-CABLE's "CABLE Input") so the
+//! audio shows up as a microphone (its "CABLE Output") in Discord/OBS.
+//!
+//! Usage:
+//!   cargo run -- --list                     # list output devices
+//!   cargo run                               # default speakers, port 47801
+//!   cargo run -- --device "CABLE Input"     # route into VB-CABLE
+//!   cargo run -- --device "CABLE Input" --port 50000
 
 use std::collections::VecDeque;
 use std::net::UdpSocket;
@@ -25,19 +32,73 @@ const MAX_BUFFER_SAMPLES: usize = STREAM_SAMPLE_RATE as usize;
 
 type SampleBuffer = Arc<Mutex<VecDeque<f32>>>;
 
+struct Args {
+    port: u16,
+    device: Option<String>,
+    list: bool,
+}
+
+fn parse_args() -> Args {
+    let mut port = 47801u16;
+    let mut device = None;
+    let mut list = false;
+    let mut it = std::env::args().skip(1);
+    while let Some(arg) = it.next() {
+        match arg.as_str() {
+            "--list" | "-l" => list = true,
+            "--device" | "-d" => device = it.next(),
+            "--port" | "-p" => {
+                if let Some(v) = it.next() {
+                    if let Ok(p) = v.parse() {
+                        port = p;
+                    }
+                }
+            }
+            // bare number is treated as the port for convenience
+            other => {
+                if let Ok(p) = other.parse::<u16>() {
+                    port = p;
+                }
+            }
+        }
+    }
+    Args { port, device, list }
+}
+
 fn main() -> Result<()> {
-    let port: u16 = std::env::args()
-        .nth(1)
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(47801);
+    let args = parse_args();
+    let host = cpal::default_host();
+
+    if args.list {
+        println!("Available output devices:");
+        for (i, device) in host.output_devices()?.enumerate() {
+            println!("  [{i}] {}", device.name().unwrap_or_else(|_| "<unknown>".into()));
+        }
+        println!("\nRoute into one with: --device \"<part of the name>\"");
+        return Ok(());
+    }
 
     let buffer: SampleBuffer = Arc::new(Mutex::new(VecDeque::new()));
 
     // --- Output device (cpal) ---
-    let host = cpal::default_host();
-    let device = host
-        .default_output_device()
-        .ok_or_else(|| anyhow!("no default output device found"))?;
+    let device = match &args.device {
+        Some(substr) => {
+            let needle = substr.to_lowercase();
+            host.output_devices()?
+                .find(|d| {
+                    d.name()
+                        .map(|n| n.to_lowercase().contains(&needle))
+                        .unwrap_or(false)
+                })
+                .ok_or_else(|| {
+                    anyhow!("no output device matching '{substr}'; run with --list to see options")
+                })?
+        }
+        None => host
+            .default_output_device()
+            .ok_or_else(|| anyhow!("no default output device found"))?,
+    };
+
     let supported = device.default_output_config()?;
     let channels = supported.channels() as usize;
     let sample_rate = supported.sample_rate().0;
@@ -53,7 +114,7 @@ fn main() -> Result<()> {
     if sample_rate != STREAM_SAMPLE_RATE {
         eprintln!(
             "warning: output runs at {sample_rate} Hz but the stream is {STREAM_SAMPLE_RATE} Hz; \
-             pitch will be off until resampling lands in a later phase"
+             pitch will be off. Set this device's default format to 48000 Hz (resampling lands later)."
         );
     }
 
@@ -67,8 +128,11 @@ fn main() -> Result<()> {
     stream.play()?;
 
     // --- UDP receiver ---
-    let socket = UdpSocket::bind(("0.0.0.0", port))?;
-    println!("Listening for audio on UDP 0.0.0.0:{port} (Ctrl+C to stop) ...");
+    let socket = UdpSocket::bind(("0.0.0.0", args.port))?;
+    println!(
+        "Listening for audio on UDP 0.0.0.0:{} (Ctrl+C to stop) ...",
+        args.port
+    );
 
     let mut packet = [0u8; 4096];
     let mut last_seq: Option<u32> = None;
@@ -82,7 +146,6 @@ fn main() -> Result<()> {
 
         let seq = u32::from_be_bytes([packet[0], packet[1], packet[2], packet[3]]);
         if let Some(prev) = last_seq {
-            // Wrapping diff; count gaps as lost packets (UDP can reorder too).
             let gap = seq.wrapping_sub(prev);
             if gap > 1 {
                 lost += (gap - 1) as u64;

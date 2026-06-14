@@ -2,6 +2,25 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
+const SETTINGS_KEY = "microhone-settings";
+
+type Settings = {
+  device?: string;
+  port?: string;
+  latency?: string;
+  pcm?: boolean;
+  usb?: boolean;
+  secure?: boolean;
+};
+
+const saved: Settings = (() => {
+  try {
+    return JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}");
+  } catch {
+    return {};
+  }
+})();
+
 function Toggle({
   checked,
   onChange,
@@ -24,7 +43,7 @@ function Toggle({
     >
       <span
         className={`absolute top-0.5 size-5 rounded-full bg-white shadow transition-all ${
-          checked ? "left-[18px]" : "left-0.5"
+          checked ? "left-4.5" : "left-0.5"
         }`}
       />
     </button>
@@ -57,12 +76,12 @@ function SettingRow({
 
 function App() {
   const [devices, setDevices] = useState<string[]>([]);
-  const [device, setDevice] = useState("");
-  const [port, setPort] = useState("47801");
-  const [latency, setLatency] = useState("40");
-  const [pcm, setPcm] = useState(false);
-  const [usb, setUsb] = useState(false);
-  const [secure, setSecure] = useState(false);
+  const [device, setDevice] = useState(saved.device ?? "");
+  const [port, setPort] = useState(saved.port ?? "47801");
+  const [latency, setLatency] = useState(saved.latency ?? "40");
+  const [pcm, setPcm] = useState(saved.pcm ?? false);
+  const [usb, setUsb] = useState(saved.usb ?? false);
+  const [secure, setSecure] = useState(saved.secure ?? false);
   const [pairing, setPairing] = useState<{ link: string; svg: string } | null>(
     null,
   );
@@ -89,6 +108,12 @@ function App() {
       subs.forEach((p) => p.then((un) => un()));
     };
   }, []);
+
+  // Remember the settings across runs.
+  useEffect(() => {
+    const settings: Settings = { device, port, latency, pcm, usb, secure };
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+  }, [device, port, latency, pcm, usb, secure]);
 
   async function start() {
     try {

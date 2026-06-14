@@ -1,21 +1,16 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Inter } from "next/font/google";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+const inter = Inter({
+  variable: "--font-inter",
   subsets: ["latin"],
 });
 
 export const metadata: Metadata = {
-  title: "microhone — your phone is the mic",
+  title: "microhone — your phone is your PC's mic",
   description:
-    "Turn your phone's microphone into a real microphone on your computer. WiFi & USB, low latency, works with Discord, OBS and Zoom.",
+    "Speak into your phone and it comes out on your computer — in Discord, Zoom, OBS and any app. Over WiFi or USB.",
 };
 
 export default function RootLayout({
@@ -24,11 +19,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html
-      lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
-    >
-      <body className="min-h-full flex flex-col">{children}</body>
+    <html lang="en" className={`${inter.variable} h-full`}>
+      <body className="flex min-h-full flex-col bg-white text-slate-900">
+        {children}
+      </body>
     </html>
   );
 }

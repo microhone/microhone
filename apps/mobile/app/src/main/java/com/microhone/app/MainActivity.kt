@@ -1,7 +1,9 @@
 package com.microhone.app
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -38,31 +40,23 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
-import com.microhone.app.audio.AudioStreamer
+import com.microhone.app.audio.AudioEngine
 import com.microhone.app.net.DeviceDiscovery
 import com.microhone.app.net.DiscoveredDevice
+import com.microhone.app.service.MicForegroundService
 import kotlinx.coroutines.delay
 
 class MainActivity : ComponentActivity() {
-    private val streamer = AudioStreamer()
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
             MicrohoneTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
-                    PocScreen(streamer)
+                    PocScreen()
                 }
             }
         }
-    }
-
-    override fun onStop() {
-        super.onStop()
-        // Faz 1 captures only while in the foreground; a foreground service
-        // for background capture lands in a later phase.
-        streamer.stop()
     }
 }
 
@@ -72,14 +66,14 @@ fun MicrohoneTheme(content: @Composable () -> Unit) {
 }
 
 @Composable
-fun PocScreen(streamer: AudioStreamer) {
+fun PocScreen() {
     val context = LocalContext.current
 
     var host by remember { mutableStateOf("") }
     var port by remember { mutableStateOf("47801") }
     var useOpus by remember { mutableStateOf(true) }
     var usb by remember { mutableStateOf(false) }
-    var streaming by remember { mutableStateOf(false) }
+    var streaming by remember { mutableStateOf(AudioEngine.streamer.isRunning) }
     var status by remember { mutableStateOf<String?>(null) }
     var level by remember { mutableFloatStateOf(0f) }
     var devices by remember { mutableStateOf<List<DiscoveredDevice>>(emptyList()) }
@@ -107,25 +101,55 @@ fun PocScreen(streamer: AudioStreamer) {
             status = "Enter a valid PC IP and port"
             return
         }
-        streamer.start(host.trim(), parsedPort, useOpus, usb) { message ->
-            status = "Error: $message"
-            streaming = false
+        val intent = Intent(context, MicForegroundService::class.java).apply {
+            action = MicForegroundService.ACTION_START
+            putExtra(MicForegroundService.EXTRA_HOST, host.trim())
+            putExtra(MicForegroundService.EXTRA_PORT, parsedPort)
+            putExtra(MicForegroundService.EXTRA_OPUS, useOpus)
+            putExtra(MicForegroundService.EXTRA_USB, usb)
         }
+        ContextCompat.startForegroundService(context, intent)
         streaming = true
         val link = if (usb) "USB" else "WiFi"
         status = "Streaming to $host:$parsedPort ($link, ${if (useOpus) "Opus" else "PCM"})"
     }
 
-    val permissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission(),
-    ) { granted ->
-        hasMicPermission = granted
-        if (granted) beginStreaming() else status = "Microphone permission denied"
+    fun stopStreaming() {
+        context.stopService(Intent(context, MicForegroundService::class.java))
+        streaming = false
+        status = "Stopped"
     }
 
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions(),
+    ) { result ->
+        val micGranted = result[Manifest.permission.RECORD_AUDIO] == true
+        hasMicPermission = micGranted
+        if (micGranted) beginStreaming() else status = "Microphone permission denied"
+    }
+
+    fun requestAndStart() {
+        val perms = buildList {
+            add(Manifest.permission.RECORD_AUDIO)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                add(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
+        permissionLauncher.launch(perms.toTypedArray())
+    }
+
+    // Reflect the shared engine: update the meter and notice if the service
+    // stopped on its own (e.g. a network error).
     LaunchedEffect(streaming) {
+        var sawRunning = false
         while (streaming) {
-            level = streamer.peakLevel
+            val running = AudioEngine.streamer.isRunning
+            if (running) sawRunning = true
+            level = AudioEngine.streamer.peakLevel
+            if (sawRunning && !running) {
+                streaming = false
+                status = AudioEngine.lastError?.let { "Error: $it" } ?: "Stopped"
+            }
             delay(80)
         }
         level = 0f
@@ -140,7 +164,7 @@ fun PocScreen(streamer: AudioStreamer) {
     ) {
         Text(text = "🎙️ microhone", style = MaterialTheme.typography.headlineMedium)
         Text(
-            text = "Faz 1–4 — audio PoC",
+            text = "audio PoC",
             style = MaterialTheme.typography.bodyMedium,
         )
 
@@ -224,13 +248,11 @@ fun PocScreen(streamer: AudioStreamer) {
         Button(
             onClick = {
                 if (streaming) {
-                    streamer.stop()
-                    streaming = false
-                    status = "Stopped"
+                    stopStreaming()
                 } else if (hasMicPermission) {
                     beginStreaming()
                 } else {
-                    permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                    requestAndStart()
                 }
             },
             modifier = Modifier.fillMaxWidth(),

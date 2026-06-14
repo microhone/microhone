@@ -36,6 +36,11 @@
             android:name=".service.MicForegroundService"
             android:exported="false"
             android:foregroundServiceType="microphone" />
+
+        <!-- Download the barcode model on install so the first QR scan is instant. -->
+        <meta-data
+            android:name="com.google.mlkit.vision.DEPENDENCIES"
+            android:value="barcode" />
     </application>
 
 </manifest>

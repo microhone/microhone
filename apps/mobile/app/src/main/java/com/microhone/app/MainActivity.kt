@@ -78,6 +78,7 @@ fun PocScreen(streamer: AudioStreamer) {
     var host by remember { mutableStateOf("") }
     var port by remember { mutableStateOf("47801") }
     var useOpus by remember { mutableStateOf(true) }
+    var usb by remember { mutableStateOf(false) }
     var streaming by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf<String?>(null) }
     var level by remember { mutableFloatStateOf(0f) }
@@ -106,12 +107,13 @@ fun PocScreen(streamer: AudioStreamer) {
             status = "Enter a valid PC IP and port"
             return
         }
-        streamer.start(host.trim(), parsedPort, useOpus) { message ->
+        streamer.start(host.trim(), parsedPort, useOpus, usb) { message ->
             status = "Error: $message"
             streaming = false
         }
         streaming = true
-        status = "Streaming to $host:$parsedPort (${if (useOpus) "Opus" else "PCM"})"
+        val link = if (usb) "USB" else "WiFi"
+        status = "Streaming to $host:$parsedPort ($link, ${if (useOpus) "Opus" else "PCM"})"
     }
 
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -191,6 +193,25 @@ fun PocScreen(streamer: AudioStreamer) {
             Switch(
                 checked = useOpus,
                 onCheckedChange = { useOpus = it },
+                enabled = !streaming,
+            )
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("USB cable")
+            Switch(
+                checked = usb,
+                onCheckedChange = {
+                    usb = it
+                    if (it) {
+                        host = "127.0.0.1"
+                        port = "47801"
+                    }
+                },
                 enabled = !streaming,
             )
         }

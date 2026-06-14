@@ -8,9 +8,12 @@ import android.media.MediaRecorder
 import androidx.annotation.RequiresPermission
 import io.github.jaredmdobson.concentus.OpusApplication
 import io.github.jaredmdobson.concentus.OpusEncoder
+import java.io.OutputStream
 import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
+import java.net.InetSocketAddress
+import java.net.Socket
 import kotlin.concurrent.thread
 import kotlin.math.abs
 
@@ -18,10 +21,14 @@ import kotlin.math.abs
  * Faz 1–3 PoC capture + sender.
  *
  * Records 48 kHz mono 16-bit PCM from the mic and streams it to the desktop
- * receiver over UDP, framed as `[ seq:u32 BE ][ timestamp:u32 BE ][ payload ]`
+ * receiver framed as `[ seq:u32 BE ][ timestamp:u32 BE ][ payload ]`
  * (see `packages/protocol/PROTOCOL.md`). The payload is Opus by default (~10 ms
  * frames, with the desktop side doing PLC) or raw little-endian PCM when Opus is
- * turned off. AAudio/Oboe and a foreground service come later.
+ * turned off.
+ *
+ * Two transports: UDP over WiFi, or TCP for USB mode (connect to 127.0.0.1,
+ * which `adb reverse` on the PC tunnels back to the desktop; each frame is
+ * length-prefixed with a u16). AAudio/Oboe and a foreground service come later.
  */
 class AudioStreamer {
 
@@ -46,12 +53,14 @@ class AudioStreamer {
 
     @SuppressLint("MissingPermission")
     @RequiresPermission(Manifest.permission.RECORD_AUDIO)
-    fun start(host: String, port: Int, useOpus: Boolean, onError: (String) -> Unit) {
+    fun start(host: String, port: Int, useOpus: Boolean, usb: Boolean, onError: (String) -> Unit) {
         if (isRunning) return
         isRunning = true
-        worker = thread(name = "microhone-mic-udp") {
+        worker = thread(name = "microhone-mic-net") {
             var record: AudioRecord? = null
-            var socket: DatagramSocket? = null
+            var udp: DatagramSocket? = null
+            var tcp: Socket? = null
+            var tcpOut: OutputStream? = null
             try {
                 val minBuffer = AudioRecord.getMinBufferSize(
                     SAMPLE_RATE,
@@ -77,8 +86,17 @@ class AudioStreamer {
                     null
                 }
 
-                val address = InetAddress.getByName(host)
-                socket = DatagramSocket()
+                var address: InetAddress? = null
+                if (usb) {
+                    tcp = Socket().apply {
+                        tcpNoDelay = true
+                        connect(InetSocketAddress(host, port), 3000)
+                    }
+                    tcpOut = tcp.getOutputStream()
+                } else {
+                    address = InetAddress.getByName(host)
+                    udp = DatagramSocket()
+                }
                 record.startRecording()
 
                 val samples = ShortArray(SAMPLES_PER_FRAME)
@@ -86,6 +104,7 @@ class AudioStreamer {
                 val opusBytes = ByteArray(1275) // max Opus packet for one mono frame
                 // Reused header+payload buffer (PCM is the larger of the two).
                 val packet = ByteArray(HEADER_LEN + pcmBytes.size)
+                val lenPrefix = ByteArray(2) // u16 frame length for the TCP stream
                 var seq = 0
                 var timestamp = 0
 
@@ -120,7 +139,18 @@ class AudioStreamer {
                     writeU32Be(packet, 0, seq)
                     writeU32Be(packet, 4, timestamp)
                     System.arraycopy(payload, 0, packet, HEADER_LEN, payloadLen)
-                    socket.send(DatagramPacket(packet, HEADER_LEN + payloadLen, address, port))
+                    val frameLen = HEADER_LEN + payloadLen
+
+                    val out = tcpOut
+                    if (out != null) {
+                        lenPrefix[0] = (frameLen ushr 8).toByte()
+                        lenPrefix[1] = frameLen.toByte()
+                        out.write(lenPrefix)
+                        out.write(packet, 0, frameLen)
+                        out.flush()
+                    } else {
+                        udp!!.send(DatagramPacket(packet, frameLen, address, port))
+                    }
 
                     seq++
                     timestamp += SAMPLES_PER_FRAME
@@ -130,7 +160,9 @@ class AudioStreamer {
             } finally {
                 runCatching { record?.stop() }
                 record?.release()
-                socket?.close()
+                udp?.close()
+                runCatching { tcpOut?.close() }
+                runCatching { tcp?.close() }
                 peakLevel = 0f
                 isRunning = false
             }

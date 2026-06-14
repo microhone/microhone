@@ -1,0 +1,14 @@
+[package]
+name = "microhone-audio-poc"
+version = "0.0.0"
+description = "Faz 1 PoC: receive raw PCM over UDP and play it on the default output device."
+edition = "2021"
+rust-version = "1.77.2"
+
+[[bin]]
+name = "microhone-audio-poc"
+path = "src/main.rs"
+
+[dependencies]
+cpal = "0.15"
+anyhow = "1"

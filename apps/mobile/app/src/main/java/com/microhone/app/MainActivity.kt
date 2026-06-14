@@ -93,6 +93,7 @@ fun PocScreen() {
     var usb by remember { mutableStateOf(false) }
     var pairingLink by remember { mutableStateOf("") }
     var pairingKey by remember { mutableStateOf<ByteArray?>(null) }
+    var showScanner by remember { mutableStateOf(false) }
     var streaming by remember { mutableStateOf(AudioEngine.streamer.isRunning) }
     var status by remember { mutableStateOf<String?>(null) }
     var level by remember { mutableFloatStateOf(0f) }
@@ -142,6 +143,32 @@ fun PocScreen() {
         status = "Stopped"
     }
 
+    fun applyPairingLink(value: String) {
+        pairingLink = value
+        val parsed = parsePairing(value)
+        if (parsed != null) {
+            host = parsed.host
+            port = parsed.port.toString()
+            pairingKey = parsed.key
+        } else if (value.isBlank()) {
+            pairingKey = null
+        }
+    }
+
+    val cameraLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (granted) showScanner = true else status = "Camera permission denied"
+    }
+
+    fun openScanner() {
+        val granted = ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.CAMERA,
+        ) == PackageManager.PERMISSION_GRANTED
+        if (granted) showScanner = true else cameraLauncher.launch(Manifest.permission.CAMERA)
+    }
+
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
     ) { result ->
@@ -177,6 +204,17 @@ fun PocScreen() {
         level = 0f
     }
 
+    if (showScanner) {
+        QrScanner(
+            onResult = { value ->
+                applyPairingLink(value)
+                showScanner = false
+            },
+            onClose = { showScanner = false },
+        )
+        return
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -192,17 +230,7 @@ fun PocScreen() {
 
         OutlinedTextField(
             value = pairingLink,
-            onValueChange = { value ->
-                pairingLink = value
-                val parsed = parsePairing(value)
-                if (parsed != null) {
-                    host = parsed.host
-                    port = parsed.port.toString()
-                    pairingKey = parsed.key
-                } else if (value.isBlank()) {
-                    pairingKey = null
-                }
-            },
+            onValueChange = { applyPairingLink(it) },
             label = { Text("Pairing link from PC (optional)") },
             placeholder = { Text("microhone://pair?…") },
             singleLine = true,
@@ -212,6 +240,14 @@ fun PocScreen() {
             },
             modifier = Modifier.fillMaxWidth(),
         )
+
+        OutlinedButton(
+            onClick = { openScanner() },
+            enabled = !streaming,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text("Scan pairing QR")
+        }
 
         if (devices.isNotEmpty()) {
             Text(

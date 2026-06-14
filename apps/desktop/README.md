@@ -29,5 +29,13 @@ pnpm --filter @microhone/desktop tauri icon path/to/logo.png
 pnpm --filter @microhone/desktop tauri:build
 ```
 
-> Faz 0 status: UI + Rust skeleton only. Audio/network/virtual-device logic
-> lands in later phases (see `microhone-plan.md`, sections 5–10).
+## Status
+
+The Rust core now hosts the audio receiver (UDP + Opus/PCM decode with PLC +
+jitter buffer + cpal output) and advertises `_microhone._tcp` over mDNS, exposed
+to the React UI via the `list_output_devices` / `start_receiver` / `stop_receiver`
+commands and `receiver-level` / `receiver-status` events. Pick an output device
+(e.g. VB-CABLE's "CABLE Input"), press Start, and stream from the phone.
+
+> Building the Rust side needs **CMake** on `PATH` (libopus is built from source):
+> `winget install -e --id Kitware.CMake`, then a fresh terminal.

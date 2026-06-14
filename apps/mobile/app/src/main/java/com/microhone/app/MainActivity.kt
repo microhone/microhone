@@ -18,12 +18,14 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -37,6 +39,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.microhone.app.audio.AudioStreamer
+import com.microhone.app.net.DeviceDiscovery
+import com.microhone.app.net.DiscoveredDevice
 import kotlinx.coroutines.delay
 
 class MainActivity : ComponentActivity() {
@@ -77,6 +81,14 @@ fun PocScreen(streamer: AudioStreamer) {
     var streaming by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf<String?>(null) }
     var level by remember { mutableFloatStateOf(0f) }
+    var devices by remember { mutableStateOf<List<DiscoveredDevice>>(emptyList()) }
+
+    val discovery = remember { DeviceDiscovery(context) }
+    DisposableEffect(Unit) {
+        discovery.onDevicesChanged = { devices = it }
+        discovery.start()
+        onDispose { discovery.stop() }
+    }
 
     var hasMicPermission by remember {
         mutableStateOf(
@@ -126,9 +138,29 @@ fun PocScreen(streamer: AudioStreamer) {
     ) {
         Text(text = "🎙️ microhone", style = MaterialTheme.typography.headlineMedium)
         Text(
-            text = "Faz 1 — audio PoC",
+            text = "Faz 1–4 — audio PoC",
             style = MaterialTheme.typography.bodyMedium,
         )
+
+        if (devices.isNotEmpty()) {
+            Text(
+                text = "Found on your network",
+                style = MaterialTheme.typography.labelMedium,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            devices.forEach { device ->
+                OutlinedButton(
+                    onClick = {
+                        host = device.host
+                        port = device.port.toString()
+                    },
+                    enabled = !streaming,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("${device.name}  —  ${device.host}:${device.port}")
+                }
+            }
+        }
 
         OutlinedTextField(
             value = host,

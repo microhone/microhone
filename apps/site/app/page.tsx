@@ -2,7 +2,8 @@ import type { ReactNode } from "react";
 import { Reveal } from "./components/reveal";
 import { HeroVisual } from "./components/hero-visual";
 
-const GITHUB_URL = "https://github.com/microhone";
+const GITHUB_URL = "https://github.com/canbedir/microhone";
+const RELEASES_URL = `${GITHUB_URL}/releases/latest`;
 
 function BoltIcon() {
   return (
@@ -154,13 +155,13 @@ export default function Home() {
             </p>
             <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
               <a
-                href={GITHUB_URL}
+                href={RELEASES_URL}
                 className="rounded-full bg-white px-6 py-3 font-medium text-blue-600 transition-transform hover:scale-[1.03]"
               >
                 Windows
               </a>
               <a
-                href={GITHUB_URL}
+                href={RELEASES_URL}
                 className="rounded-full border border-white/40 px-6 py-3 font-medium text-white transition-colors hover:bg-white/10"
               >
                 Android

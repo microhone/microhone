@@ -27,6 +27,7 @@ use std::sync::{Arc, Mutex};
 use anyhow::{anyhow, Result};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use magnum_opus::{Channels, Decoder};
+use mdns_sd::{ServiceDaemon, ServiceInfo};
 
 /// Header is seq (u32) + timestamp (u32).
 const HEADER_LEN: usize = 8;
@@ -34,6 +35,8 @@ const HEADER_LEN: usize = 8;
 const STREAM_SAMPLE_RATE: u32 = 48_000;
 /// Default target latency held in the jitter buffer.
 const DEFAULT_LATENCY_MS: u32 = 40;
+/// mDNS service type the Android app discovers.
+const SERVICE_TYPE: &str = "_microhone._tcp.local.";
 
 type SharedJitter = Arc<Mutex<JitterBuffer>>;
 
@@ -96,6 +99,7 @@ struct Args {
     list: bool,
     latency_ms: u32,
     pcm: bool,
+    no_mdns: bool,
 }
 
 fn parse_args() -> Args {
@@ -104,11 +108,13 @@ fn parse_args() -> Args {
     let mut list = false;
     let mut latency_ms = DEFAULT_LATENCY_MS;
     let mut pcm = false;
+    let mut no_mdns = false;
     let mut it = std::env::args().skip(1);
     while let Some(arg) = it.next() {
         match arg.as_str() {
             "--list" | "-l" => list = true,
             "--pcm" => pcm = true,
+            "--no-mdns" => no_mdns = true,
             "--device" | "-d" => device = it.next(),
             "--port" | "-p" => {
                 if let Some(v) = it.next() {
@@ -138,7 +144,28 @@ fn parse_args() -> Args {
         list,
         latency_ms,
         pcm,
+        no_mdns,
     }
+}
+
+/// Advertise this host as `_microhone._tcp` so the Android app can discover it
+/// without typing an IP. Returns the daemon, which must stay alive to keep the
+/// record published.
+fn advertise_mdns(port: u16) -> Result<ServiceDaemon> {
+    let mdns = ServiceDaemon::new()?;
+    let host = gethostname::gethostname().to_string_lossy().to_string();
+    let safe: String = host
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+        .collect();
+    let instance = format!("microhone on {host}");
+    let host_name = format!("microhone-{safe}.local.");
+    let props = [("v", "1"), ("proto", "udp")];
+    let info = ServiceInfo::new(SERVICE_TYPE, &instance, &host_name, "", port, &props[..])?
+        .enable_addr_auto();
+    mdns.register(info)?;
+    println!("Advertising {SERVICE_TYPE} as \"{instance}\" on port {port}");
+    Ok(mdns)
 }
 
 fn main() -> Result<()> {
@@ -216,6 +243,19 @@ fn main() -> Result<()> {
         Some(Decoder::new(48_000, Channels::Mono).map_err(|e| anyhow!("opus decoder: {e}"))?)
     };
     let mut decode_buf = vec![0f32; 5760];
+
+    // --- mDNS advertisement (kept alive for the program's lifetime) ---
+    let _mdns_guard = if args.no_mdns {
+        None
+    } else {
+        match advertise_mdns(args.port) {
+            Ok(daemon) => Some(daemon),
+            Err(e) => {
+                eprintln!("mDNS advertise failed ({e}); clients must enter the IP manually");
+                None
+            }
+        }
+    };
 
     // --- UDP receiver ---
     let socket = UdpSocket::bind(("0.0.0.0", args.port))?;

@@ -29,10 +29,12 @@ cargo run                            # default speakers, UDP 47801
 cargo run -- --list                  # list output devices
 cargo run -- --device "CABLE Input"  # route into a virtual device (faz 2)
 cargo run -- --device "CABLE Input" --port 50000
+cargo run -- --no-mdns               # don't advertise on the network
 ```
 
-Then point the Android app at this PC's LAN IP and the same port, and press
-Start.
+On start the receiver advertises itself as `_microhone._tcp` over mDNS, so the
+Android app lists it automatically — no need to type the IP. Pick it in the app
+(or enter the LAN IP + port manually) and press Start.
 
 - **Faz 1:** default device → you hear your phone's mic from the PC speakers.
 - **Faz 2:** route into VB-CABLE's "CABLE Input"; then pick "CABLE Output (VB-Audio

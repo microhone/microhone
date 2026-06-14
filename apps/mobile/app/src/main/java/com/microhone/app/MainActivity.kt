@@ -10,6 +10,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -19,6 +20,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
@@ -71,6 +73,7 @@ fun PocScreen(streamer: AudioStreamer) {
 
     var host by remember { mutableStateOf("") }
     var port by remember { mutableStateOf("47801") }
+    var useOpus by remember { mutableStateOf(true) }
     var streaming by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf<String?>(null) }
     var level by remember { mutableFloatStateOf(0f) }
@@ -91,12 +94,12 @@ fun PocScreen(streamer: AudioStreamer) {
             status = "Enter a valid PC IP and port"
             return
         }
-        streamer.start(host.trim(), parsedPort) { message ->
+        streamer.start(host.trim(), parsedPort, useOpus) { message ->
             status = "Error: $message"
             streaming = false
         }
         streaming = true
-        status = "Streaming to $host:$parsedPort"
+        status = "Streaming to $host:$parsedPort (${if (useOpus) "Opus" else "PCM"})"
     }
 
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -146,6 +149,19 @@ fun PocScreen(streamer: AudioStreamer) {
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
             modifier = Modifier.fillMaxWidth(),
         )
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("Opus codec")
+            Switch(
+                checked = useOpus,
+                onCheckedChange = { useOpus = it },
+                enabled = !streaming,
+            )
+        }
 
         LinearProgressIndicator(
             progress = { level },

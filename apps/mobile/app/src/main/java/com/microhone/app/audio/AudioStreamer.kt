@@ -6,6 +6,8 @@ import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
 import androidx.annotation.RequiresPermission
+import io.github.jaredmdobson.concentus.OpusApplication
+import io.github.jaredmdobson.concentus.OpusEncoder
 import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
@@ -13,12 +15,13 @@ import kotlin.concurrent.thread
 import kotlin.math.abs
 
 /**
- * Faz 1 PoC capture + sender.
+ * Faz 1–3 PoC capture + sender.
  *
- * Records raw 48 kHz mono 16-bit PCM from the mic and streams it to the desktop
- * receiver over UDP, framed as `[ seq:u32 BE ][ timestamp:u32 BE ][ pcm ]`
- * (see `packages/protocol/PROTOCOL.md`). No codec, no pairing — this only
- * proves the pipeline. AAudio/Oboe and a foreground service come later.
+ * Records 48 kHz mono 16-bit PCM from the mic and streams it to the desktop
+ * receiver over UDP, framed as `[ seq:u32 BE ][ timestamp:u32 BE ][ payload ]`
+ * (see `packages/protocol/PROTOCOL.md`). The payload is Opus by default (~10 ms
+ * frames, with the desktop side doing PLC) or raw little-endian PCM when Opus is
+ * turned off. AAudio/Oboe and a foreground service come later.
  */
 class AudioStreamer {
 
@@ -43,7 +46,7 @@ class AudioStreamer {
 
     @SuppressLint("MissingPermission")
     @RequiresPermission(Manifest.permission.RECORD_AUDIO)
-    fun start(host: String, port: Int, onError: (String) -> Unit) {
+    fun start(host: String, port: Int, useOpus: Boolean, onError: (String) -> Unit) {
         if (isRunning) return
         isRunning = true
         worker = thread(name = "microhone-mic-udp") {
@@ -68,31 +71,57 @@ class AudioStreamer {
                     "AudioRecord failed to initialize"
                 }
 
+                val encoder = if (useOpus) {
+                    OpusEncoder(SAMPLE_RATE, 1, OpusApplication.OPUS_APPLICATION_AUDIO)
+                } else {
+                    null
+                }
+
                 val address = InetAddress.getByName(host)
                 socket = DatagramSocket()
                 record.startRecording()
 
-                val frameBytes = SAMPLES_PER_FRAME * BYTES_PER_SAMPLE
-                val pcm = ByteArray(frameBytes)
-                val packet = ByteArray(HEADER_LEN + frameBytes)
+                val samples = ShortArray(SAMPLES_PER_FRAME)
+                val pcmBytes = ByteArray(SAMPLES_PER_FRAME * BYTES_PER_SAMPLE)
+                val opusBytes = ByteArray(1275) // max Opus packet for one mono frame
+                // Reused header+payload buffer (PCM is the larger of the two).
+                val packet = ByteArray(HEADER_LEN + pcmBytes.size)
                 var seq = 0
                 var timestamp = 0
 
                 while (isRunning) {
                     var read = 0
-                    while (read < frameBytes && isRunning) {
-                        val r = record.read(pcm, read, frameBytes - read)
+                    while (read < SAMPLES_PER_FRAME && isRunning) {
+                        val r = record.read(samples, read, SAMPLES_PER_FRAME - read)
                         if (r <= 0) break
                         read += r
                     }
-                    if (read <= 0) continue
+                    if (read < SAMPLES_PER_FRAME) continue
+
+                    peakLevel = framePeak(samples, read)
+
+                    val payload: ByteArray
+                    val payloadLen: Int
+                    if (encoder != null) {
+                        val len = encoder.encode(samples, 0, SAMPLES_PER_FRAME, opusBytes, 0, opusBytes.size)
+                        if (len <= 0) continue
+                        payload = opusBytes
+                        payloadLen = len
+                    } else {
+                        var b = 0
+                        for (i in 0 until read) {
+                            pcmBytes[b++] = (samples[i].toInt() and 0xFF).toByte()
+                            pcmBytes[b++] = (samples[i].toInt() shr 8).toByte()
+                        }
+                        payload = pcmBytes
+                        payloadLen = b
+                    }
 
                     writeU32Be(packet, 0, seq)
                     writeU32Be(packet, 4, timestamp)
-                    System.arraycopy(pcm, 0, packet, HEADER_LEN, read)
-                    socket.send(DatagramPacket(packet, HEADER_LEN + read, address, port))
+                    System.arraycopy(payload, 0, packet, HEADER_LEN, payloadLen)
+                    socket.send(DatagramPacket(packet, HEADER_LEN + payloadLen, address, port))
 
-                    peakLevel = framePeak(pcm, read)
                     seq++
                     timestamp += SAMPLES_PER_FRAME
                 }
@@ -115,17 +144,12 @@ class AudioStreamer {
         peakLevel = 0f
     }
 
-    /** Peak absolute amplitude of a little-endian PCM frame, normalized to 0f..1f. */
-    private fun framePeak(pcm: ByteArray, length: Int): Float {
+    /** Peak absolute amplitude of a PCM frame, normalized to 0f..1f. */
+    private fun framePeak(samples: ShortArray, length: Int): Float {
         var peak = 0
-        var i = 0
-        while (i + 1 < length) {
-            val lo = pcm[i].toInt() and 0xFF
-            val hi = pcm[i + 1].toInt() // sign-extends
-            val sample = (hi shl 8) or lo
-            val a = abs(sample)
+        for (i in 0 until length) {
+            val a = abs(samples[i].toInt())
             if (a > peak) peak = a
-            i += 2
         }
         return peak / 32768f
     }

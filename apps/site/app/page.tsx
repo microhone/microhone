@@ -9,6 +9,30 @@ const GITHUB_URL = RELEASES_REPO;
 const WINDOWS_DOWNLOAD = `${RELEASES_REPO}/releases/latest/download/microhone-windows-setup.exe`;
 const ANDROID_DOWNLOAD = `${RELEASES_REPO}/releases/latest/download/microhone-android.apk`;
 
+function LogoMark({ className = "size-7" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 1024 1024" className={className} aria-hidden>
+      <defs>
+        <linearGradient id="logo-grad" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stopColor="#3B82F6" />
+          <stop offset="1" stopColor="#2563EB" />
+        </linearGradient>
+      </defs>
+      <rect width="1024" height="1024" rx="232" fill="url(#logo-grad)" />
+      <rect x="412" y="230" width="200" height="330" rx="100" fill="#fff" />
+      <path
+        d="M330 470 a182 182 0 0 0 364 0"
+        fill="none"
+        stroke="#fff"
+        strokeWidth="46"
+        strokeLinecap="round"
+      />
+      <rect x="490" y="648" width="44" height="118" rx="22" fill="#fff" />
+      <rect x="392" y="760" width="240" height="46" rx="23" fill="#fff" />
+    </svg>
+  );
+}
+
 function DownloadIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="none" className="size-4">
@@ -62,7 +86,10 @@ export default function Home() {
       {/* Nav */}
       <header className="sticky top-0 z-20 border-b border-slate-100 bg-white/70 backdrop-blur-xl">
         <nav className="mx-auto flex w-full max-w-5xl items-center justify-between px-6 py-4">
-          <span className="text-lg font-semibold tracking-tight">microhone</span>
+          <span className="flex items-center gap-2">
+            <LogoMark />
+            <span className="text-lg font-semibold tracking-tight">microhone</span>
+          </span>
           <a
             href="#download"
             className="rounded-full bg-blue-500 px-4 py-2 text-sm font-medium text-white shadow-sm shadow-blue-500/25 transition-all duration-200 hover:bg-blue-600 hover:shadow-md active:scale-95"

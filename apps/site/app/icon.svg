@@ -1,4 +1,4 @@
-<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+<svg width="32" height="32" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="#3B82F6"/>
@@ -6,7 +6,6 @@
     </linearGradient>
   </defs>
   <rect width="1024" height="1024" rx="232" fill="url(#bg)"/>
-  <!-- microphone, white -->
   <rect x="412" y="230" width="200" height="330" rx="100" fill="#ffffff"/>
   <path d="M330 470 a182 182 0 0 0 364 0" fill="none" stroke="#ffffff" stroke-width="46" stroke-linecap="round"/>
   <rect x="490" y="648" width="44" height="118" rx="22" fill="#ffffff"/>

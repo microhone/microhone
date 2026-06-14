@@ -8,18 +8,31 @@ import android.os.Build
 import android.os.Bundle
 import android.util.Base64
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -27,7 +40,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -38,7 +51,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
@@ -48,23 +64,51 @@ import com.microhone.app.net.DiscoveredDevice
 import com.microhone.app.service.MicForegroundService
 import kotlinx.coroutines.delay
 
+private val Blue = Color(0xFF3B82F6)
+private val Slate900 = Color(0xFF0B1220)
+private val Slate500 = Color(0xFF64748B)
+private val Slate200 = Color(0xFFE2E8F0)
+private val PageBg = Color(0xFFF8FAFC)
+
+private val MicrohoneColors = lightColorScheme(
+    primary = Blue,
+    onPrimary = Color.White,
+    primaryContainer = Color(0xFFDCEAFE),
+    onPrimaryContainer = Color(0xFF0B2A4A),
+    background = PageBg,
+    onBackground = Slate900,
+    surface = Color.White,
+    onSurface = Slate900,
+    surfaceVariant = Color(0xFFEFF3F8),
+    outline = Slate200,
+)
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+        // Force light system bars (dark icons) so they stay visible on our
+        // light UI even when the phone is in dark mode.
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.light(
+                android.graphics.Color.TRANSPARENT,
+                android.graphics.Color.TRANSPARENT,
+            ),
+            navigationBarStyle = SystemBarStyle.light(
+                android.graphics.Color.TRANSPARENT,
+                android.graphics.Color.TRANSPARENT,
+            ),
+        )
         setContent {
-            MicrohoneTheme {
-                Surface(modifier = Modifier.fillMaxSize()) {
+            MaterialTheme(colorScheme = MicrohoneColors) {
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.background,
+                ) {
                     PocScreen()
                 }
             }
         }
     }
-}
-
-@Composable
-fun MicrohoneTheme(content: @Composable () -> Unit) {
-    MaterialTheme(colorScheme = darkColorScheme(), content = content)
 }
 
 /** Parsed `microhone://pair?h=..&p=..&k=..` link: host, port and 32-byte key. */
@@ -81,6 +125,47 @@ fun parsePairing(link: String): Pairing? {
     }.getOrNull() ?: return null
     if (key.size != 32) return null
     return Pairing(host, port, key)
+}
+
+@Composable
+private fun SectionCard(content: @Composable () -> Unit) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        border = BorderStroke(1.dp, Slate200),
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            content()
+        }
+    }
+}
+
+@Composable
+private fun StatusPill(streaming: Boolean) {
+    val bg = if (streaming) MaterialTheme.colorScheme.primaryContainer else Color(0xFFEFF3F8)
+    val fg = if (streaming) Color(0xFF0B2A4A) else Slate500
+    Surface(color = bg, shape = CircleShape) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Surface(
+                modifier = Modifier.size(6.dp),
+                shape = CircleShape,
+                color = if (streaming) Blue else Slate500,
+            ) {}
+            Text(
+                text = if (streaming) "Live" else "Idle",
+                style = MaterialTheme.typography.labelMedium,
+                color = fg,
+            )
+        }
+    }
 }
 
 @Composable
@@ -119,7 +204,7 @@ fun PocScreen() {
         status = null
         val parsedPort = port.toIntOrNull()
         if (host.isBlank() || parsedPort == null || parsedPort !in 1..65535) {
-            status = "Enter a valid PC IP and port"
+            status = "Enter a PC address and port, or scan the pairing QR"
             return
         }
         val intent = Intent(context, MicForegroundService::class.java).apply {
@@ -132,15 +217,14 @@ fun PocScreen() {
         }
         ContextCompat.startForegroundService(context, intent)
         streaming = true
-        val link = if (usb) "USB" else "WiFi"
-        val lock = if (pairingKey != null) ", 🔒" else ""
-        status = "Streaming to $host:$parsedPort ($link, ${if (useOpus) "Opus" else "PCM"}$lock)"
+        val lock = if (pairingKey != null) " · 🔒" else ""
+        status = "Connected to $host$lock"
     }
 
     fun stopStreaming() {
         context.stopService(Intent(context, MicForegroundService::class.java))
         streaming = false
-        status = "Stopped"
+        status = null
     }
 
     fun applyPairingLink(value: String) {
@@ -187,8 +271,6 @@ fun PocScreen() {
         permissionLauncher.launch(perms.toTypedArray())
     }
 
-    // Reflect the shared engine: update the meter and notice if the service
-    // stopped on its own (e.g. a network error).
     LaunchedEffect(streaming) {
         var sawRunning = false
         while (streaming) {
@@ -197,7 +279,7 @@ fun PocScreen() {
             level = AudioEngine.streamer.peakLevel
             if (sawRunning && !running) {
                 streaming = false
-                status = AudioEngine.lastError?.let { "Error: $it" } ?: "Stopped"
+                status = AudioEngine.lastError?.let { "Error: $it" }
             }
             delay(80)
         }
@@ -218,131 +300,159 @@ fun PocScreen() {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
+            .windowInsetsPadding(WindowInsets.systemBars)
+            .verticalScroll(rememberScrollState())
+            .padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Text(text = "🎙️ microhone", style = MaterialTheme.typography.headlineMedium)
-        Text(
-            text = "audio PoC",
-            style = MaterialTheme.typography.bodyMedium,
-        )
-
-        OutlinedTextField(
-            value = pairingLink,
-            onValueChange = { applyPairingLink(it) },
-            label = { Text("Pairing link from PC (optional)") },
-            placeholder = { Text("microhone://pair?…") },
-            singleLine = true,
-            enabled = !streaming,
-            supportingText = {
-                if (pairingKey != null) Text("🔒 Paired — audio will be encrypted")
-            },
+        Row(
             modifier = Modifier.fillMaxWidth(),
-        )
-
-        OutlinedButton(
-            onClick = { openScanner() },
-            enabled = !streaming,
-            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text("Scan pairing QR")
+            Column {
+                Text(
+                    text = "microhone",
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = "your phone mic",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Slate500,
+                )
+            }
+            StatusPill(streaming)
         }
 
-        if (devices.isNotEmpty()) {
+        // Connect
+        SectionCard {
             Text(
-                text = "Found on your network",
-                style = MaterialTheme.typography.labelMedium,
+                text = "Connect to your PC",
+                style = MaterialTheme.typography.titleSmall,
+            )
+            FilledTonalButton(
+                onClick = { openScanner() },
+                enabled = !streaming,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(if (pairingKey != null) "🔒 Paired — rescan" else "Scan pairing QR")
+            }
+            OutlinedTextField(
+                value = pairingLink,
+                onValueChange = { applyPairingLink(it) },
+                label = { Text("…or paste the pairing link") },
+                singleLine = true,
+                enabled = !streaming,
                 modifier = Modifier.fillMaxWidth(),
             )
-            devices.forEach { device ->
-                OutlinedButton(
-                    onClick = {
-                        host = device.host
-                        port = device.port.toString()
-                    },
-                    enabled = !streaming,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text("${device.name}  —  ${device.host}:${device.port}")
+
+            if (devices.isNotEmpty()) {
+                Text(
+                    text = "On your network",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = Slate500,
+                )
+                devices.forEach { device ->
+                    OutlinedButton(
+                        onClick = {
+                            host = device.host
+                            port = device.port.toString()
+                        },
+                        enabled = !streaming,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text("${device.name} · ${device.host}")
+                    }
                 }
+            }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(
+                    value = host,
+                    onValueChange = { host = it },
+                    label = { Text("PC address") },
+                    singleLine = true,
+                    enabled = !streaming,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                    modifier = Modifier.weight(2f),
+                )
+                OutlinedTextField(
+                    value = port,
+                    onValueChange = { port = it },
+                    label = { Text("Port") },
+                    singleLine = true,
+                    enabled = !streaming,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.weight(1f),
+                )
             }
         }
 
-        OutlinedTextField(
-            value = host,
-            onValueChange = { host = it },
-            label = { Text("PC IP address") },
-            placeholder = { Text("192.168.1.42") },
-            singleLine = true,
-            enabled = !streaming,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
-            modifier = Modifier.fillMaxWidth(),
-        )
-        OutlinedTextField(
-            value = port,
-            onValueChange = { port = it },
-            label = { Text("Port") },
-            singleLine = true,
-            enabled = !streaming,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-            modifier = Modifier.fillMaxWidth(),
-        )
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text("Opus codec")
-            Switch(
-                checked = useOpus,
-                onCheckedChange = { useOpus = it },
-                enabled = !streaming,
+        // Control
+        SectionCard {
+            LinearProgressIndicator(
+                progress = { level },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(8.dp)
+                    .clip(CircleShape),
             )
-        }
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text("USB cable")
-            Switch(
-                checked = usb,
-                onCheckedChange = {
-                    usb = it
-                    if (it) {
-                        host = "127.0.0.1"
-                        port = "47801"
-                    }
+            Button(
+                onClick = {
+                    if (streaming) stopStreaming()
+                    else if (hasMicPermission) beginStreaming()
+                    else requestAndStart()
                 },
-                enabled = !streaming,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp),
+            ) {
+                Text(if (streaming) "Stop" else "Start")
+            }
+            status?.let {
+                Text(
+                    text = it,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Slate500,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        }
+
+        // Options
+        SectionCard {
+            Text(
+                text = "Options",
+                style = MaterialTheme.typography.labelMedium,
+                color = Slate500,
             )
-        }
-
-        LinearProgressIndicator(
-            progress = { level },
-            modifier = Modifier.fillMaxWidth(),
-        )
-
-        Button(
-            onClick = {
-                if (streaming) {
-                    stopStreaming()
-                } else if (hasMicPermission) {
-                    beginStreaming()
-                } else {
-                    requestAndStart()
-                }
-            },
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Text(if (streaming) "Stop" else "Start")
-        }
-
-        status?.let {
-            Text(text = it, style = MaterialTheme.typography.bodySmall)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("Opus codec")
+                Switch(checked = useOpus, onCheckedChange = { useOpus = it }, enabled = !streaming)
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("USB cable")
+                Switch(
+                    checked = usb,
+                    onCheckedChange = {
+                        usb = it
+                        if (it) {
+                            host = "127.0.0.1"
+                            port = "47801"
+                        }
+                    },
+                    enabled = !streaming,
+                )
+            }
         }
     }
 }

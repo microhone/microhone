@@ -11,8 +11,8 @@
     "dev": "turbo run dev",
     "build": "turbo run build",
     "lint": "turbo run lint",
-    "site:dev": "pnpm --filter @microhone/site dev",
-    "desktop:dev": "pnpm --filter @microhone/desktop dev"
+    "site:dev": "turbo run dev --filter=@microhone/site",
+    "desktop:dev": "turbo run dev --filter=@microhone/desktop"
   },
   "devDependencies": {
     "turbo": "^2.5.0"

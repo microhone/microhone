@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { check, type Update } from "@tauri-apps/plugin-updater";
+import { relaunch } from "@tauri-apps/plugin-process";
 
 const SETTINGS_KEY = "microhone-settings";
 
@@ -88,6 +90,29 @@ function App() {
   const [running, setRunning] = useState(false);
   const [status, setStatus] = useState("Idle");
   const [level, setLevel] = useState(0);
+  const [update, setUpdate] = useState<Update | null>(null);
+  const [updating, setUpdating] = useState(false);
+
+  // Check for a new version once on launch.
+  useEffect(() => {
+    check()
+      .then((u) => {
+        if (u) setUpdate(u);
+      })
+      .catch(() => {});
+  }, []);
+
+  async function installUpdate() {
+    if (!update) return;
+    setUpdating(true);
+    try {
+      await update.downloadAndInstall();
+      await relaunch();
+    } catch (e) {
+      setStatus(`Update failed: ${String(e)}`);
+      setUpdating(false);
+    }
+  }
 
   const autoSelected = useRef(false);
   const cableDevice =
@@ -183,6 +208,18 @@ function App() {
 
   return (
     <main className="min-h-full bg-slate-50 text-slate-900">
+      {update && (
+        <div className="flex items-center justify-between gap-3 bg-blue-500 px-6 py-2 text-sm text-white">
+          <span>microhone {update.version} is available</span>
+          <button
+            onClick={installUpdate}
+            disabled={updating}
+            className="rounded-full bg-white px-3 py-1 text-xs font-medium text-blue-600 transition-colors hover:bg-blue-50 disabled:opacity-60"
+          >
+            {updating ? "Installing…" : "Install & restart"}
+          </button>
+        </div>
+      )}
       <div className="mx-auto flex max-w-md flex-col gap-5 px-6 py-8">
         <header className="flex items-center justify-between">
           <div>

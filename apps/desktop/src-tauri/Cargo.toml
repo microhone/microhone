@@ -1,6 +1,6 @@
 [package]
 name = "microhone-desktop"
-version = "0.1.2"
+version = "0.1.3"
 description = "microhone — virtual microphone host"
 authors = ["microhone"]
 edition = "2021"
@@ -20,6 +20,8 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 cpal = "0.15"

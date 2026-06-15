@@ -324,6 +324,10 @@ fun PocScreen() {
             val running = AudioEngine.streamer.isRunning
             if (running) sawRunning = true
             level = AudioEngine.streamer.peakLevel
+            if (running) {
+                if (AudioEngine.streamer.reconnecting) status = "Reconnecting…"
+                else if (status == "Reconnecting…") status = "Connected"
+            }
             if (sawRunning && !running) {
                 streaming = false
                 status = AudioEngine.lastError?.let { "Error: $it" }

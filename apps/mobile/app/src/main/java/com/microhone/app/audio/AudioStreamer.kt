@@ -44,6 +44,7 @@ class AudioStreamer {
         private const val HEADER_LEN = 8
         private const val NONCE_LEN = 12
         private const val GCM_TAG_LEN = 16
+        private const val MAX_RECONNECT = 20
     }
 
     @Volatile
@@ -67,6 +68,11 @@ class AudioStreamer {
     @Volatile
     var gateThreshold: Float = 0f
 
+    /** True while retrying the connection after a drop. Polled by the UI. */
+    @Volatile
+    var reconnecting: Boolean = false
+        private set
+
     private var worker: Thread? = null
 
     @SuppressLint("MissingPermission")
@@ -82,11 +88,9 @@ class AudioStreamer {
         if (isRunning) return
         isRunning = true
         muted = false
+        reconnecting = false
         worker = thread(name = "microhone-mic-net") {
             var record: AudioRecord? = null
-            var udp: DatagramSocket? = null
-            var tcp: Socket? = null
-            var tcpOut: OutputStream? = null
             try {
                 val minBuffer = AudioRecord.getMinBufferSize(
                     SAMPLE_RATE,
@@ -112,19 +116,6 @@ class AudioStreamer {
                     null
                 }
 
-                var address: InetAddress? = null
-                if (usb) {
-                    tcp = Socket().apply {
-                        tcpNoDelay = true
-                        connect(InetSocketAddress(host, port), 3000)
-                    }
-                    tcpOut = tcp.getOutputStream()
-                } else {
-                    address = InetAddress.getByName(host)
-                    udp = DatagramSocket()
-                }
-                record.startRecording()
-
                 // Optional AES-256-GCM: only a paired sender (with the key) is
                 // accepted and the audio is encrypted on the wire.
                 val keySpec = key?.let { SecretKeySpec(it, "AES") }
@@ -143,92 +134,137 @@ class AudioStreamer {
                 var seq = 0
                 var timestamp = 0
 
+                record.startRecording()
+
+                // Reconnect loop: the capture stays open; only the socket is
+                // re-established after a drop, with backoff.
+                var attempts = 0
                 while (isRunning) {
-                    var read = 0
-                    while (read < SAMPLES_PER_FRAME && isRunning) {
-                        val r = record.read(samples, read, SAMPLES_PER_FRAME - read)
-                        if (r <= 0) break
-                        read += r
-                    }
-                    if (read < SAMPLES_PER_FRAME) continue
-
-                    if (muted) {
-                        java.util.Arrays.fill(samples, 0, read, 0.toShort())
-                        peakLevel = 0f
-                    } else {
-                        val g = gain
-                        if (g != 1f) {
-                            for (i in 0 until read) {
-                                samples[i] = (samples[i] * g).toInt().coerceIn(-32768, 32767).toShort()
+                    var udp: DatagramSocket? = null
+                    var tcp: Socket? = null
+                    var tcpOut: OutputStream? = null
+                    var address: InetAddress? = null
+                    try {
+                        if (usb) {
+                            tcp = Socket().apply {
+                                tcpNoDelay = true
+                                connect(InetSocketAddress(host, port), 3000)
                             }
+                            tcpOut = tcp.getOutputStream()
+                        } else {
+                            address = InetAddress.getByName(host)
+                            udp = DatagramSocket()
                         }
-                        var peak = framePeak(samples, read)
-                        if (gateThreshold > 0f && peak < gateThreshold) {
-                            java.util.Arrays.fill(samples, 0, read, 0.toShort())
-                            peak = 0f
+                        reconnecting = false
+
+                        while (isRunning) {
+                            var read = 0
+                            while (read < SAMPLES_PER_FRAME && isRunning) {
+                                val r = record.read(samples, read, SAMPLES_PER_FRAME - read)
+                                if (r <= 0) break
+                                read += r
+                            }
+                            if (read < SAMPLES_PER_FRAME) continue
+
+                            if (muted) {
+                                java.util.Arrays.fill(samples, 0, read, 0.toShort())
+                                peakLevel = 0f
+                            } else {
+                                val g = gain
+                                if (g != 1f) {
+                                    for (i in 0 until read) {
+                                        samples[i] = (samples[i] * g).toInt().coerceIn(-32768, 32767).toShort()
+                                    }
+                                }
+                                var peak = framePeak(samples, read)
+                                if (gateThreshold > 0f && peak < gateThreshold) {
+                                    java.util.Arrays.fill(samples, 0, read, 0.toShort())
+                                    peak = 0f
+                                }
+                                peakLevel = peak
+                            }
+
+                            val payload: ByteArray
+                            val payloadLen: Int
+                            if (encoder != null) {
+                                val len = encoder.encode(samples, 0, SAMPLES_PER_FRAME, opusBytes, 0, opusBytes.size)
+                                if (len <= 0) continue
+                                payload = opusBytes
+                                payloadLen = len
+                            } else {
+                                var b = 0
+                                for (i in 0 until read) {
+                                    pcmBytes[b++] = (samples[i].toInt() and 0xFF).toByte()
+                                    pcmBytes[b++] = (samples[i].toInt() shr 8).toByte()
+                                }
+                                payload = pcmBytes
+                                payloadLen = b
+                            }
+
+                            writeU32Be(packet, 0, seq)
+                            writeU32Be(packet, 4, timestamp)
+                            System.arraycopy(payload, 0, packet, HEADER_LEN, payloadLen)
+                            val frameLen = HEADER_LEN + payloadLen
+
+                            // Build the wire bytes: encrypted (nonce + ciphertext) or plain.
+                            val wire: ByteArray
+                            val wireLen: Int
+                            if (cipher != null) {
+                                random!!.nextBytes(nonce)
+                                cipher.init(Cipher.ENCRYPT_MODE, keySpec, GCMParameterSpec(128, nonce))
+                                System.arraycopy(nonce, 0, secureBuf, 0, NONCE_LEN)
+                                val ctLen = cipher.doFinal(packet, 0, frameLen, secureBuf, NONCE_LEN)
+                                wire = secureBuf
+                                wireLen = NONCE_LEN + ctLen
+                            } else {
+                                wire = packet
+                                wireLen = frameLen
+                            }
+
+                            val out = tcpOut
+                            if (out != null) {
+                                lenPrefix[0] = (wireLen ushr 8).toByte()
+                                lenPrefix[1] = wireLen.toByte()
+                                out.write(lenPrefix)
+                                out.write(wire, 0, wireLen)
+                                out.flush()
+                            } else {
+                                udp!!.send(DatagramPacket(wire, wireLen, address, port))
+                            }
+
+                            attempts = 0
+                            seq++
+                            timestamp += SAMPLES_PER_FRAME
                         }
-                        peakLevel = peak
-                    }
-
-                    val payload: ByteArray
-                    val payloadLen: Int
-                    if (encoder != null) {
-                        val len = encoder.encode(samples, 0, SAMPLES_PER_FRAME, opusBytes, 0, opusBytes.size)
-                        if (len <= 0) continue
-                        payload = opusBytes
-                        payloadLen = len
-                    } else {
-                        var b = 0
-                        for (i in 0 until read) {
-                            pcmBytes[b++] = (samples[i].toInt() and 0xFF).toByte()
-                            pcmBytes[b++] = (samples[i].toInt() shr 8).toByte()
+                    } catch (e: Exception) {
+                        if (!isRunning) break
+                        attempts++
+                        if (attempts > MAX_RECONNECT) {
+                            onError(
+                                "Lost connection to $host — check it's running and " +
+                                    "on the same network. (${e.message ?: e})",
+                            )
+                            break
                         }
-                        payload = pcmBytes
-                        payloadLen = b
+                        reconnecting = true
+                        peakLevel = 0f
+                        try {
+                            Thread.sleep(minOf(2000L, 300L * attempts))
+                        } catch (_: InterruptedException) {
+                            break
+                        }
+                    } finally {
+                        runCatching { tcpOut?.close() }
+                        runCatching { tcp?.close() }
+                        udp?.close()
                     }
-
-                    writeU32Be(packet, 0, seq)
-                    writeU32Be(packet, 4, timestamp)
-                    System.arraycopy(payload, 0, packet, HEADER_LEN, payloadLen)
-                    val frameLen = HEADER_LEN + payloadLen
-
-                    // Build the wire bytes: encrypted (nonce + ciphertext) or plain.
-                    val wire: ByteArray
-                    val wireLen: Int
-                    if (cipher != null) {
-                        random!!.nextBytes(nonce)
-                        cipher.init(Cipher.ENCRYPT_MODE, keySpec, GCMParameterSpec(128, nonce))
-                        System.arraycopy(nonce, 0, secureBuf, 0, NONCE_LEN)
-                        val ctLen = cipher.doFinal(packet, 0, frameLen, secureBuf, NONCE_LEN)
-                        wire = secureBuf
-                        wireLen = NONCE_LEN + ctLen
-                    } else {
-                        wire = packet
-                        wireLen = frameLen
-                    }
-
-                    val out = tcpOut
-                    if (out != null) {
-                        lenPrefix[0] = (wireLen ushr 8).toByte()
-                        lenPrefix[1] = wireLen.toByte()
-                        out.write(lenPrefix)
-                        out.write(wire, 0, wireLen)
-                        out.flush()
-                    } else {
-                        udp!!.send(DatagramPacket(wire, wireLen, address, port))
-                    }
-
-                    seq++
-                    timestamp += SAMPLES_PER_FRAME
                 }
             } catch (e: Exception) {
                 onError(e.message ?: e.toString())
             } finally {
                 runCatching { record?.stop() }
                 record?.release()
-                udp?.close()
-                runCatching { tcpOut?.close() }
-                runCatching { tcp?.close() }
+                reconnecting = false
                 peakLevel = 0f
                 isRunning = false
             }
@@ -237,8 +273,10 @@ class AudioStreamer {
 
     fun stop() {
         isRunning = false
-        worker?.join(500)
+        worker?.interrupt() // wake a reconnect backoff sleep
+        worker?.join(800)
         worker = null
+        reconnecting = false
         peakLevel = 0f
     }
 

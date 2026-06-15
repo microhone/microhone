@@ -6,8 +6,10 @@ import { AppsViz, LatencyViz, LinkViz } from "./components/card-visuals";
 // Public "releases" repo that CI publishes artifacts to (code repo stays private).
 const RELEASES_REPO = "https://github.com/microhone/microhone";
 const GITHUB_URL = RELEASES_REPO;
-const WINDOWS_DOWNLOAD = `${RELEASES_REPO}/releases/latest/download/microhone-windows-setup.exe`;
-const ANDROID_DOWNLOAD = `${RELEASES_REPO}/releases/latest/download/microhone-android.apk`;
+// Served through our own /download proxy so the download starts on microhone.com
+// instead of navigating to github.com.
+const WINDOWS_DOWNLOAD = "/download/windows";
+const ANDROID_DOWNLOAD = "/download/android";
 
 function LogoMark({ className = "size-7" }: { className?: string }) {
   return (

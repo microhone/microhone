@@ -1,9 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { openUrl } from "@tauri-apps/plugin-opener";
-
-const VB_CABLE_URL = "https://vb-audio.com/Cable/";
 
 const SETTINGS_KEY = "microhone-settings";
 
@@ -102,6 +99,17 @@ function App() {
     invoke<string[]>("list_output_devices").then(setDevices).catch(() => {});
   }
 
+  async function installVbCable() {
+    try {
+      await invoke("install_vbcable");
+      setStatus(
+        "Approve the prompt, click “Install Driver”, then reboot and press “Recheck”.",
+      );
+    } catch (e) {
+      setStatus(`Error: ${String(e)}`);
+    }
+  }
+
   // Auto-pick the virtual cable the first time we see it.
   useEffect(() => {
     if (!autoSelected.current && device === "" && cableDevice) {
@@ -196,31 +204,28 @@ function App() {
                 Set up your virtual microphone
               </h2>
               <p className="mt-1 text-xs text-slate-500">
-                microhone needs VB-CABLE, a free virtual audio device, so apps
-                can pick it as a mic.
+                microhone needs a free virtual audio device. Install it in one
+                click — approve the prompt, click “Install Driver” in the
+                installer, then reboot.
               </p>
             </div>
-            <ol className="flex list-decimal flex-col gap-1.5 pl-5 text-sm text-slate-600 marker:text-blue-500">
-              <li>Download VB-CABLE and run the installer as administrator.</li>
-              <li>Reboot, then set “CABLE Input” to 48000 Hz in Sound settings.</li>
-              <li>Come back and click “I’ve installed it”.</li>
-            </ol>
             <div className="flex gap-3">
               <button
-                onClick={() => openUrl(VB_CABLE_URL)}
+                onClick={installVbCable}
                 className="rounded-lg bg-blue-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-600"
               >
-                Download VB-CABLE
+                Install virtual microphone
               </button>
               <button
                 onClick={refreshDevices}
                 className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-white"
               >
-                I’ve installed it
+                Recheck
               </button>
             </div>
           </section>
         )}
+
 
         <section className="flex flex-col gap-5 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
           <label className="flex flex-col gap-1.5">
@@ -241,7 +246,8 @@ function App() {
               ))}
             </select>
             <span className="text-xs text-slate-400">
-              Pick “CABLE Input” to send the audio into Discord, OBS or Zoom.
+              Send into “CABLE Input”, then choose “CABLE Output” as your
+              microphone in Discord, OBS or Zoom.
             </span>
           </label>
 

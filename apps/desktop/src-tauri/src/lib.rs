@@ -9,6 +9,7 @@ use std::sync::Mutex;
 use tauri::State;
 
 mod receiver;
+mod setup;
 
 use receiver::Receiver;
 
@@ -69,6 +70,7 @@ pub fn run() {
             list_output_devices,
             start_receiver,
             stop_receiver,
+            setup::install_vbcable,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

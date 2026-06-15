@@ -19,6 +19,9 @@ jobs:
     runs-on: windows-latest
     env:
       CMAKE_POLICY_VERSION_MINIMUM: "3.5"
+      # Sign the auto-updater artifacts (.sig).
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -39,6 +42,25 @@ jobs:
           mkdir dist-release
           cp apps/desktop/src-tauri/target/release/bundle/nsis/*-setup.exe dist-release/microhone-windows-setup.exe
           cp apps/desktop/src-tauri/target/release/bundle/msi/*.msi dist-release/microhone-windows.msi
+      - name: Build updater manifest (latest.json)
+        shell: bash
+        run: |
+          VER="${GITHUB_REF_NAME#v}"
+          SIG=$(cat apps/desktop/src-tauri/target/release/bundle/nsis/*-setup.exe.sig)
+          BASE="https://github.com/microhone/microhone/releases/latest/download"
+          cat > dist-release/latest.json <<EOF
+          {
+            "version": "$VER",
+            "notes": "microhone $VER",
+            "pub_date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "platforms": {
+              "windows-x86_64": {
+                "signature": "$SIG",
+                "url": "$BASE/microhone-windows-setup.exe"
+              }
+            }
+          }
+          EOF
       - name: Publish to the releases repo
         uses: softprops/action-gh-release@v2
         with:

@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 <p align="center">
   <img src="apps/desktop/src-tauri/icons/128x128.png" alt="microhone" width="92" />
 </p>
@@ -132,10 +133,23 @@ microhone/
 └── packages/
     └── protocol/    # PROTOCOL.md — the contract both sides implement
 ```
+=======
+# microhone
 
-`apps/site` and `apps/desktop` are pnpm workspace packages managed with
-Turborepo. `apps/mobile` is a standalone Gradle project.
+**Turn your phone into your computer's microphone.**
 
+Speak into your phone and it comes out on your PC — in Discord, Zoom, OBS and
+any app. Over WiFi or USB. Free, no account.
+
+[microhone.com](https://microhone.com) · [Download](https://github.com/microhone/microhone/releases/latest)
+
+## Download
+>>>>>>> 53a1d27fdf5267adc641d5c8ffc7283e40ede180
+
+- **Windows** — [microhone-windows-setup.exe](https://github.com/microhone/microhone/releases/latest/download/microhone-windows-setup.exe)
+- **Android** — [microhone-android.apk](https://github.com/microhone/microhone/releases/latest/download/microhone-android.apk)
+
+<<<<<<< HEAD
 ## Getting started
 
 Requires **Node 20+** with **pnpm** (via corepack). The desktop host also needs
@@ -155,3 +169,29 @@ Open `apps/mobile` in Android Studio for the phone client.
 
 Conventional Commits with a detailed body — see
 [`microhone-plan.md`](./microhone-plan.md) §16.
+=======
+macOS and Linux coming soon.
+
+## How it works
+
+1. **Install** the desktop app on your computer and the microhone app on your phone.
+2. **Connect** — your phone finds the PC on the network automatically, or plug in
+   over USB for the lowest delay. Pair securely by scanning a QR code.
+3. **Talk** — pick *microhone* as your microphone in any app.
+
+## Features
+
+- Low delay — good enough for live calls and streaming, not just recording
+- Works with every app that reads a microphone (Discord, Zoom, OBS, Meet, …)
+- WiFi or USB
+- Encrypted, paired connection — only your phone can connect
+- Free, no account, no telemetry
+
+## Notes
+
+- On Windows, microhone routes audio through the free
+  [VB-CABLE](https://vb-audio.com/Cable/) virtual device — the app walks you
+  through installing it on first run.
+- The Windows installer is currently unsigned, so SmartScreen may warn on first
+  run: choose **More info → Run anyway**.
+>>>>>>> 53a1d27fdf5267adc641d5c8ffc7283e40ede180

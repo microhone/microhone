@@ -11,6 +11,8 @@
 
 <p align="center">
   <a href="https://microhone.com"><strong>microhone.com</strong></a>
+  ·
+  <a href="https://github.com/microhone/microhone/releases/latest"><strong>Download</strong></a>
 </p>
 
 ---
@@ -29,6 +31,14 @@ The contract between them is written down **once**, in
 [`packages/protocol/PROTOCOL.md`](./packages/protocol/PROTOCOL.md), and
 implemented **twice** — in Kotlin and in Rust.
 
+## Download
+
+- **Windows** — [microhone-windows-setup.exe](https://github.com/microhone/microhone/releases/latest/download/microhone-windows-setup.exe)
+- **Android** — [microhone-android.apk](https://github.com/microhone/microhone/releases/latest/download/microhone-android.apk)
+
+macOS and Linux are on the roadmap. The Windows installer is currently unsigned,
+so SmartScreen may warn on first run: choose **More info → Run anyway**.
+
 ## Features
 
 | Capability         | Description                                                                       |
@@ -41,6 +51,7 @@ implemented **twice** — in Kotlin and in Rust.
 | Opus or raw PCM    | Opus with packet-loss concealment on Wi-Fi; raw `pcm_s16le` for a lossless path.   |
 | Jitter buffer      | A target-latency buffer absorbs reordering and loss before playback.               |
 | Background capture | An Android foreground service keeps the mic alive when the app isn't in view.      |
+| Auto-update        | The desktop host checks for signed updates on launch and installs in one click.    |
 
 ## Architecture
 
@@ -100,9 +111,8 @@ The device then appears as **CABLE Output**; select that as your microphone.
 Shipping a signed driver under our own name is a later, paid step.
 
 **macOS / Linux.** The paths are known — an AudioServerPlugin (à la BlackHole)
-on macOS, a PipeWire/PulseAudio null sink on Linux — and are documented in
-[`microhone-plan.md`](./microhone-plan.md) §5. The Windows host is what is wired
-up today.
+on macOS, a PipeWire/PulseAudio null sink on Linux. The Windows host is what is
+wired up today.
 
 ## Latency
 
@@ -132,23 +142,7 @@ microhone/
 └── packages/
     └── protocol/    # PROTOCOL.md — the contract both sides implement
 ```
-=======
-# microhone
 
-**Turn your phone into your computer's microphone.**
-
-Speak into your phone and it comes out on your PC — in Discord, Zoom, OBS and
-any app. Over WiFi or USB. Free, no account.
-
-[microhone.com](https://microhone.com) · [Download](https://github.com/microhone/microhone/releases/latest)
-
-## Download
->>>>>>> 53a1d27fdf5267adc641d5c8ffc7283e40ede180
-
-- **Windows** — [microhone-windows-setup.exe](https://github.com/microhone/microhone/releases/latest/download/microhone-windows-setup.exe)
-- **Android** — [microhone-android.apk](https://github.com/microhone/microhone/releases/latest/download/microhone-android.apk)
-
-<<<<<<< HEAD
 ## Getting started
 
 Requires **Node 20+** with **pnpm** (via corepack). The desktop host also needs
@@ -163,34 +157,3 @@ corepack pnpm desktop:dev    # Tauri host (needs Rust)
 ```
 
 Open `apps/mobile` in Android Studio for the phone client.
-
-## Commits
-
-Conventional Commits with a detailed body — see
-[`microhone-plan.md`](./microhone-plan.md) §16.
-=======
-macOS and Linux coming soon.
-
-## How it works
-
-1. **Install** the desktop app on your computer and the microhone app on your phone.
-2. **Connect** — your phone finds the PC on the network automatically, or plug in
-   over USB for the lowest delay. Pair securely by scanning a QR code.
-3. **Talk** — pick *microhone* as your microphone in any app.
-
-## Features
-
-- Low delay — good enough for live calls and streaming, not just recording
-- Works with every app that reads a microphone (Discord, Zoom, OBS, Meet, …)
-- WiFi or USB
-- Encrypted, paired connection — only your phone can connect
-- Free, no account, no telemetry
-
-## Notes
-
-- On Windows, microhone routes audio through the free
-  [VB-CABLE](https://vb-audio.com/Cable/) virtual device — the app walks you
-  through installing it on first run.
-- The Windows installer is currently unsigned, so SmartScreen may warn on first
-  run: choose **More info → Run anyway**.
->>>>>>> 53a1d27fdf5267adc641d5c8ffc7283e40ede180
